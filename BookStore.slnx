@@ -1,0 +1,35 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/ApiGateway/ApiGateway.csproj" />
+  </Folder>
+  <Folder Name="/src/BuildingBlocks/">
+    <Project Path="src/BuildingBlocks/SharedKernel/SharedKernel.csproj" />
+  </Folder>
+  <Folder Name="/src/Services/" />
+  <Folder Name="/src/Services/Catalog/">
+    <Project Path="src/Services/Catalog/Catalog.API/Catalog.API.csproj" />
+    <Project Path="src/Services/Catalog/Catalog.Application/Catalog.Application.csproj" />
+    <Project Path="src/Services/Catalog/Catalog.Domain/Catalog.Domain.csproj" />
+    <Project Path="src/Services/Catalog/Catalog.Infrastructure/Catalog.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/src/Services/Inventory/">
+    <Project Path="src/Services/Inventory/Inventory.API/Inventory.API.csproj" />
+    <Project Path="src/Services/Inventory/Inventory.Application/Inventory.Application.csproj" />
+    <Project Path="src/Services/Inventory/Inventory.Domain/Inventory.Domain.csproj" />
+    <Project Path="src/Services/Inventory/Inventory.Infrastructure/Inventory.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/src/Services/Orders/">
+    <Project Path="src/Services/Orders/Orders.API/Orders.API.csproj" />
+    <Project Path="src/Services/Orders/Orders.Application/Orders.Application.csproj" />
+    <Project Path="src/Services/Orders/Orders.Domain/Orders.Domain.csproj" />
+    <Project Path="src/Services/Orders/Orders.Infrastructure/Orders.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Catalog.IntegrationTests/Catalog.IntegrationTests.csproj" />
+    <Project Path="tests/Catalog.UnitTests/Catalog.UnitTests.csproj" />
+    <Project Path="tests/Inventory.IntegrationTests/Inventory.IntegrationTests.csproj" />
+    <Project Path="tests/Inventory.UnitTests/Inventory.UnitTests.csproj" />
+    <Project Path="tests/Orders.IntegrationTests/Orders.IntegrationTests.csproj" />
+    <Project Path="tests/Orders.UnitTests/Orders.UnitTests.csproj" />
+  </Folder>
+</Solution>
