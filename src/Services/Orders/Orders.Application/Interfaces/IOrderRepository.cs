@@ -7,6 +7,10 @@ public interface IOrderRepository
 {
     Task<Order?> GetByIdAsync(OrderId id, CancellationToken cancellationToken = default);
 
+    Task<Order?> GetByIdempotencyKeyAsync(
+        string idempotencyKey,
+        CancellationToken cancellationToken = default);
+
     Task<(IReadOnlyList<Order> Items, int TotalCount)> GetOrdersAsync(
         Guid? customerId,
         int page,

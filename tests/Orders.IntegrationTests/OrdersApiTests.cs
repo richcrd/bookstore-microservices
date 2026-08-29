@@ -85,4 +85,56 @@ public class OrdersApiTests(OrdersApiFactory factory) : IClassFixture<OrdersApiF
         var result = await response.Content.ReadFromJsonAsync<PaginatedResult<OrderDto>>();
         result!.Items.Should().NotBeEmpty();
     }
+
+    [Fact]
+    public async Task PostOrder_SameIdempotencyKey_ShouldReturnSameOrderWithoutDuplicates()
+    {
+        var customerId = Guid.NewGuid();
+        var key = Guid.NewGuid().ToString("D");
+        var request = new CreateOrderRequest(
+            customerId,
+            [new CreateOrderItemRequest(FakeCatalogService.KnownBookId, 1)]);
+
+        using var first = new HttpRequestMessage(HttpMethod.Post, "/api/v1/orders")
+        {
+            Content = JsonContent.Create(request)
+        };
+        first.Headers.Add("Idempotency-Key", key);
+        var firstResponse = await _client.SendAsync(first);
+        firstResponse.StatusCode.Should().Be(HttpStatusCode.Created);
+        var firstOrder = await firstResponse.Content.ReadFromJsonAsync<OrderDto>();
+
+        using var second = new HttpRequestMessage(HttpMethod.Post, "/api/v1/orders")
+        {
+            Content = JsonContent.Create(request)
+        };
+        second.Headers.Add("Idempotency-Key", key);
+        var secondResponse = await _client.SendAsync(second);
+        secondResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+        var secondOrder = await secondResponse.Content.ReadFromJsonAsync<OrderDto>();
+
+        secondOrder!.Id.Should().Be(firstOrder!.Id);
+
+        var list = await _client.GetFromJsonAsync<PaginatedResult<OrderDto>>(
+            $"/api/v1/orders?customerId={customerId}");
+        list!.Items.Should().ContainSingle(i => i.Id == firstOrder.Id);
+    }
+
+    [Fact]
+    public async Task PostOrder_InvalidIdempotencyKey_ShouldReturnBadRequest()
+    {
+        var request = new CreateOrderRequest(
+            Guid.NewGuid(),
+            [new CreateOrderItemRequest(FakeCatalogService.KnownBookId, 1)]);
+
+        using var invalid = new HttpRequestMessage(HttpMethod.Post, "/api/v1/orders")
+        {
+            Content = JsonContent.Create(request)
+        };
+        invalid.Headers.Add("Idempotency-Key", "no-soy-un-guid");
+
+        var response = await _client.SendAsync(invalid);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
 }

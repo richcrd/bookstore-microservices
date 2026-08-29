@@ -11,6 +11,7 @@ public class Order
     
     public OrderId Id { get; private set; }
     public Guid CustomerId { get; private set; }
+    public string IdempotencyKey { get; private set; }
     public OrderStatus Status { get; private set; }
     public DateTime CreatedAt { get; private set; }
     public DateTime? UpdatedAt { get; private set; }
@@ -23,17 +24,23 @@ public class Order
     
     private Order() { }
 
-    public static Order Create(Guid customerId)
+    public static Order Create(Guid customerId, string idempotencyKey)
     {
         if (customerId == Guid.Empty)
         {
             throw new ArgumentException("CustomerId is required.", nameof(customerId));
         }
 
+        if (string.IsNullOrWhiteSpace(idempotencyKey))
+        {
+            throw new ArgumentException("IdempotencyKey is required.", nameof(idempotencyKey));
+        }
+
         var order = new Order()
         {
             Id = OrderId.New(),
             CustomerId = customerId,
+            IdempotencyKey = idempotencyKey,
             Status = OrderStatus.Pending,
             CreatedAt = DateTime.UtcNow
         };

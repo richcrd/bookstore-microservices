@@ -20,6 +20,13 @@ public class OrderConfiguration : IEntityTypeConfiguration<Order>
         builder.Property(o => o.CustomerId)
             .IsRequired();
 
+        builder.Property(o => o.IdempotencyKey)
+            .HasMaxLength(128)
+            .IsRequired();
+
+        builder.HasIndex(o => o.IdempotencyKey)
+            .IsUnique();
+
         builder.Property(o => o.Status)
             .HasConversion<string>()
             .HasMaxLength(20);

@@ -19,7 +19,7 @@ public class UpdateOrderStatusCommandTests
 
     public UpdateOrderStatusCommandTests()
     {
-        _order = Order.Create(Guid.NewGuid());
+        _order = Order.Create(Guid.NewGuid(), Guid.NewGuid().ToString("D"));
         _order.AddItem(Guid.NewGuid(), "Clean Architecture V2", new Money(199.99m, "USD"), 2);
 
         _repository.GetByIdAsync(Arg.Any<OrderId>(), Arg.Any<CancellationToken>())

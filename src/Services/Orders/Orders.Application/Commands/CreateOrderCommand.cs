@@ -7,9 +7,22 @@ namespace Orders.Application;
 
 public class CreateOrderCommand(IOrderRepository orderRepository, IUnitOfWork unitOfWork, ICatalogService catalogService)
 {
-    public async Task<OrderDto> ExecuteAsync(CreateOrderRequest request, CancellationToken cancellationToken = default)
+    public async Task<CreateOrderResult> ExecuteAsync(
+        CreateOrderRequest request,
+        string? idempotencyKey,
+        CancellationToken cancellationToken = default)
     {
-        var order = Order.Create(request.CustomerId);
+        var key = string.IsNullOrWhiteSpace(idempotencyKey)
+            ? Guid.NewGuid().ToString("D")
+            : idempotencyKey;
+
+        var existing = await orderRepository.GetByIdempotencyKeyAsync(key, cancellationToken);
+        if (existing is not null)
+        {
+            return new CreateOrderResult(MapToDto(existing), Created: false);
+        }
+
+        var order = Order.Create(request.CustomerId, key);
 
         foreach (var item in request.Items)
         {
@@ -20,7 +33,7 @@ public class CreateOrderCommand(IOrderRepository orderRepository, IUnitOfWork un
         await orderRepository.AddAsync(order, cancellationToken);
         await unitOfWork.SaveChangesAsync(cancellationToken);
 
-        return MapToDto(order);
+        return new CreateOrderResult(MapToDto(order), Created: true);
     }
 
     private static OrderDto MapToDto(Order order) => new OrderDto(

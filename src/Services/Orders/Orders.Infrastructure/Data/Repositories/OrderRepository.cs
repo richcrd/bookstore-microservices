@@ -12,6 +12,11 @@ public class OrderRepository(OrdersDbContext context) : IOrderRepository
             .Include(o => o.Items)
             .SingleOrDefaultAsync(o => o.Id == id, cancellationToken);
 
+    public async Task<Order?> GetByIdempotencyKeyAsync(string idempotencyKey, CancellationToken cancellationToken = default)
+        => await context.Orders
+            .Include(o => o.Items)
+            .SingleOrDefaultAsync(o => o.IdempotencyKey == idempotencyKey, cancellationToken);
+
     public async Task<(IReadOnlyList<Order> Items, int TotalCount)> GetOrdersAsync(Guid? customerId, int page, int pageSize, CancellationToken cancellationToken = default)
     {
         var query = context.Orders.AsNoTracking().AsQueryable();

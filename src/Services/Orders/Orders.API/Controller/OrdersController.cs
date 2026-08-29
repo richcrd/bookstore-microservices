@@ -34,8 +34,17 @@ public class OrdersController(
             }
         }
 
-        var order = await createOrderCommand.ExecuteAsync(request, cancellationToken);
-        return CreatedAtAction(nameof(GetById), new { id = order.Id }, order);
+        var idempotencyKey = Request.Headers["Idempotency-Key"].FirstOrDefault();
+        if (!string.IsNullOrWhiteSpace(idempotencyKey) && !Guid.TryParse(idempotencyKey, out _))
+        {
+            return ValidationProblem("Idempotency-Key must be a valid GUID.");
+        }
+
+        var result = await createOrderCommand.ExecuteAsync(request, idempotencyKey, cancellationToken);
+
+        return result.Created
+            ? CreatedAtAction(nameof(GetById), new { id = result.Order.Id }, result.Order)
+            : Ok(result.Order);
     }
     
     [HttpGet("{id:guid}")]
