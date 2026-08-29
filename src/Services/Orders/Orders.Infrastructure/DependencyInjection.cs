@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Orders.Application.Interfaces;
 using Orders.Infrastructure.Data;
 using Orders.Infrastructure.Data.Repositories;
+using Orders.Infrastructure.External;
 
 namespace Orders.Infrastructure;
 
@@ -20,6 +21,11 @@ public static class DependencyInjection
 
         services.AddScoped<IOrderRepository, OrderRepository>();
         services.AddScoped<IUnitOfWork, UnitOfWork>();
+        services.AddHttpClient<ICatalogService, CatalogService>((sp, client) =>
+        {
+            client.BaseAddress = new Uri(sp.GetRequiredService<IConfiguration>()["CatalogApi:BaseAddress"]!);
+            client.Timeout = TimeSpan.FromSeconds(5);
+        });
 
         return services;
     }
