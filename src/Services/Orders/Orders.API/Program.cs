@@ -1,8 +1,10 @@
+using MassTransit;
 using FluentValidation;
 using Orders.API.Middleware;
 using Orders.Application;
 using Orders.Application.Commands.Validation;
 using Orders.Infrastructure;
+using Orders.Infrastructure.Data;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -19,6 +21,25 @@ builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 
 builder.Services.AddHealthChecks()
     .AddNpgSql(sp => sp.GetRequiredService<IConfiguration>().GetConnectionString("OrdersDb")!);
+
+builder.Services.AddMassTransit(x =>
+{
+    x.AddEntityFrameworkOutbox<OrdersDbContext>(o =>
+    {
+        o.QueryDelay = TimeSpan.FromSeconds(1);
+        o.UsePostgres();
+        o.UseBusOutbox();
+    });
+
+    x.SetKebabCaseEndpointNameFormatter();
+
+    x.UsingRabbitMq((context, cfg) =>
+    {
+        cfg.Host(builder.Configuration["RabbitMQ:Host"] ?? "rabbitm://localhost");
+        cfg.UseMessageRetry(r => r.Interval(3, TimeSpan.FromSeconds(5)));
+        cfg.ConfigureEndpoints(context);
+    });
+});
 
 var app = builder.Build();
 

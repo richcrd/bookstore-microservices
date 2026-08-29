@@ -1,3 +1,4 @@
+using MassTransit;
 using Microsoft.EntityFrameworkCore;
 using Orders.Domain.Entities;
 
@@ -10,6 +11,12 @@ public class OrdersDbContext(DbContextOptions<OrdersDbContext> options) : DbCont
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(OrdersDbContext).Assembly);
+        
+        // Outbox tables - MassTransit
+        modelBuilder.AddInboxStateEntity();
+        modelBuilder.AddOutboxMessageEntity();
+        modelBuilder.AddOutboxStateEntity();
+        
         base.OnModelCreating(modelBuilder);
     }
 }
