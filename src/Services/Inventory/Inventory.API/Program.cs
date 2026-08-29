@@ -1,8 +1,11 @@
 using FluentValidation;
+using Inventory.API.Consumers;
 using Inventory.API.Middleware;
 using Inventory.Application;
 using Inventory.Application.Commands.Validation;
 using Inventory.Infrastructure;
+using Inventory.Infrastructure.Data;
+using MassTransit;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -19,6 +22,32 @@ builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 
 builder.Services.AddHealthChecks()
     .AddNpgSql(sp => sp.GetRequiredService<IConfiguration>().GetConnectionString("InventoryDb")!);
+
+builder.Services.AddMassTransit(x =>
+{
+    x.AddConsumer<OrderCreatedConsumer>();
+    x.AddConsumer<OrderStatusChangedConsumer>();
+
+    x.AddEntityFrameworkOutbox<InventoryDbContext>(o =>
+    {
+        o.QueryDelay = TimeSpan.FromSeconds(1);
+        o.UsePostgres();
+    });
+    
+    x.AddConfigureEndpointsCallback((context, name, cfg) =>
+    {
+        cfg.UseMessageRetry(r => r.Interval(3, TimeSpan.FromSeconds(5)));
+        cfg.UseEntityFrameworkOutbox<InventoryDbContext>(context);
+    });
+
+    x.SetKebabCaseEndpointNameFormatter();
+
+    x.UsingRabbitMq((context, cfg) =>
+    {
+        cfg.Host(builder.Configuration["RabbitMQ:Host"] ?? "rabbitmq://localhost");
+        cfg.ConfigureEndpoints(context);
+    });
+});
 
 var app = builder.Build();
 
