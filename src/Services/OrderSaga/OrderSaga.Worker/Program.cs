@@ -1,0 +1,53 @@
+using MassTransit;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+
+namespace OrderSaga.Worker;
+
+public class Program
+{
+    public static void Main(string[] args) => CreateHostBuilder(args).Build().Run();
+
+    public static IHostBuilder CreateHostBuilder(string[] args) =>
+        Host.CreateDefaultBuilder(args)
+            .ConfigureServices((hostContext, services) =>
+            {
+                var configuration = hostContext.Configuration;
+
+                services.AddDbContext<OrderSagaDbContext>(options =>
+                    options.UseNpgsql(configuration.GetConnectionString("OrderSagaDb")));
+
+                services.AddMassTransit(x =>
+                {
+                    x.AddSagaStateMachine<OrderSagaStateMachine, OrderSagaState>()
+                        .EntityFrameworkRepository(r =>
+                        {
+                            r.ExistingDbContext<OrderSagaDbContext>();
+                            r.UsePostgres();
+                        });
+
+                    x.AddConsumer<PaymentGatewayConsumer>();
+
+                    x.AddEntityFrameworkOutbox<OrderSagaDbContext>(o =>
+                    {
+                        o.UsePostgres();
+                    });
+
+                    x.SetKebabCaseEndpointNameFormatter();
+
+                    x.AddConfigureEndpointsCallback((context, name, cfg) =>
+                    {
+                        cfg.UseMessageRetry(r => r.Interval(3, TimeSpan.FromSeconds(5)));
+                        cfg.UseEntityFrameworkOutbox<OrderSagaDbContext>(context);
+                    });
+
+                    x.UsingRabbitMq((context, cfg) =>
+                    {
+                        cfg.Host(configuration["RabbitMQ:Host"] ?? "rabbitmq://localhost");
+                        cfg.ConfigureEndpoints(context);
+                    });
+                });
+            });
+}

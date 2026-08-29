@@ -24,6 +24,9 @@
     <Project Path="src/Services/Orders/Orders.Domain/Orders.Domain.csproj" />
     <Project Path="src/Services/Orders/Orders.Infrastructure/Orders.Infrastructure.csproj" />
   </Folder>
+  <Folder Name="/src/Services/OrderSaga/">
+    <Project Path="src/Services/OrderSaga/OrderSaga.Worker/OrderSaga.Worker.csproj" />
+  </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Catalog.IntegrationTests/Catalog.IntegrationTests.csproj" />
     <Project Path="tests/Catalog.UnitTests/Catalog.UnitTests.csproj" />
@@ -31,5 +34,6 @@
     <Project Path="tests/Inventory.UnitTests/Inventory.UnitTests.csproj" />
     <Project Path="tests/Orders.IntegrationTests/Orders.IntegrationTests.csproj" />
     <Project Path="tests/Orders.UnitTests/Orders.UnitTests.csproj" />
+    <Project Path="tests/OrderSaga.UnitTests/OrderSaga.UnitTests.csproj" />
   </Folder>
 </Solution>

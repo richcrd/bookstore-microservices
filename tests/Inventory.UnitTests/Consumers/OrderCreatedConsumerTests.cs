@@ -35,6 +35,8 @@ public class OrderCreatedConsumerTests
         await harness.Bus.Publish(new OrderCreatedMessage(
             OrderId,
             CustomerId,
+            399.98m,
+            "USD",
             DateTime.UtcNow,
             [new OrderItemMessage(BookId, 2)]));
 
@@ -65,6 +67,8 @@ public class OrderCreatedConsumerTests
         await harness.Bus.Publish(new OrderCreatedMessage(
             OrderId,
             CustomerId,
+            399.98m,
+            "USD",
             DateTime.UtcNow,
             [new OrderItemMessage(BookId, 2)]));
 

@@ -37,6 +37,8 @@ public class UnitOfWork(OrdersDbContext context, IPublishEndpoint publishEndpoin
                         await publishEndpoint.Publish(new OrderCreatedMessage(
                             created.OrderId,
                             created.CustomerId,
+                            order.Total.Amount,
+                            order.Total.Currency,
                             created.OccurredOn,
                             items), cancellationToken);
                         break;

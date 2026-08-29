@@ -1,5 +1,6 @@
 using MassTransit;
 using FluentValidation;
+using Orders.API.Consumers;
 using Orders.API.Middleware;
 using Orders.Application;
 using Orders.Application.Commands.Validation;
@@ -24,6 +25,8 @@ builder.Services.AddHealthChecks()
 
 builder.Services.AddMassTransit(x =>
 {
+    x.AddConsumer<ChangeOrderStatusCommandConsumer>();
+
     x.AddEntityFrameworkOutbox<OrdersDbContext>(o =>
     {
         o.QueryDelay = TimeSpan.FromSeconds(1);
@@ -33,10 +36,15 @@ builder.Services.AddMassTransit(x =>
 
     x.SetKebabCaseEndpointNameFormatter();
 
+    x.AddConfigureEndpointsCallback((context, name, cfg) =>
+    {
+        cfg.UseMessageRetry(r => r.Interval(3, TimeSpan.FromSeconds(5)));
+        cfg.UseEntityFrameworkOutbox<OrdersDbContext>(context);
+    });
+
     x.UsingRabbitMq((context, cfg) =>
     {
-        cfg.Host(builder.Configuration["RabbitMQ:Host"] ?? "rabbitm://localhost");
-        cfg.UseMessageRetry(r => r.Interval(3, TimeSpan.FromSeconds(5)));
+        cfg.Host(builder.Configuration["RabbitMQ:Host"] ?? "rabbitmq://localhost");
         cfg.ConfigureEndpoints(context);
     });
 });
