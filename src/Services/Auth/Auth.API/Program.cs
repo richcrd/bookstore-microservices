@@ -3,13 +3,17 @@ using System.Text;
 using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 using SharedKernel.Security;
+using SharedKernel.Telemetry;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddProblemDetails();
 builder.Services.AddHealthChecks();
+builder.Services.AddServiceTelemetry(builder.Configuration, "Auth.API");
 
 var app = builder.Build();
+
+app.UseServiceTelemetry();
 
 app.MapPost("/api/v1/auth/token", (LoginRequest request) => TokenHandler.Issue(app.Configuration, request));
 

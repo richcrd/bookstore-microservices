@@ -3,6 +3,9 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
 
 namespace OrderSaga.Worker;
 
@@ -15,6 +18,18 @@ public class Program
             .ConfigureServices((hostContext, services) =>
             {
                 var configuration = hostContext.Configuration;
+
+                var otlpEndpoint = configuration["OpenTelemetry:Endpoint"] ?? "http://localhost:4317";
+
+                services.AddOpenTelemetry()
+                    .ConfigureResource(r => r.AddService("OrderSaga.Worker"))
+                    .WithTracing(t => t
+                        .AddEntityFrameworkCoreInstrumentation()
+                        .AddSource("MassTransit", "OrderSaga.Worker")
+                        .AddOtlpExporter(o => o.Endpoint = new Uri(otlpEndpoint)))
+                    .WithMetrics(m => m
+                        .AddMeter("MassTransit")
+                        .AddOtlpExporter(o => o.Endpoint = new Uri(otlpEndpoint)));
 
                 services.AddDbContext<OrderSagaDbContext>(options =>
                     options.UseNpgsql(configuration.GetConnectionString("OrderSagaDb")));
@@ -42,6 +57,8 @@ public class Program
                         cfg.UseMessageRetry(r => r.Interval(3, TimeSpan.FromSeconds(5)));
                         cfg.UseEntityFrameworkOutbox<OrderSagaDbContext>(context);
                     });
+
+                    x.AddOpenTelemetry();
 
                     x.UsingRabbitMq((context, cfg) =>
                     {

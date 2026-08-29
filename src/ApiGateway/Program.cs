@@ -1,5 +1,6 @@
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.RateLimiting;
+using SharedKernel.Telemetry;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -35,8 +36,11 @@ builder.Services.AddRateLimiter(options =>
 
 builder.Services.AddHealthChecks();
 
+builder.Services.AddServiceTelemetry(builder.Configuration, "ApiGateway");
+
 var app = builder.Build();
 
+app.UseServiceTelemetry();
 app.UseRateLimiter();
 
 app.MapReverseProxy();

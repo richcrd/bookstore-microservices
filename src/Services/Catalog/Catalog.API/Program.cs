@@ -4,6 +4,7 @@ using Catalog.Application;
 using Catalog.Application.Commands.Validation;
 using Catalog.Infrastructure;
 using FluentValidation;
+using SharedKernel.Telemetry;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -25,6 +26,8 @@ builder.Services.AddJwtAuthentication(builder.Configuration);
 builder.Services.AddAuthorizationBuilder()
     .AddPolicy("AdminOnly", policy => policy.RequireRole("admin"));
 
+builder.Services.AddServiceTelemetry(builder.Configuration, "Catalog.API");
+
 var app = builder.Build();
 
 if (app.Environment.IsDevelopment())
@@ -33,6 +36,7 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
+app.UseServiceTelemetry();
 app.UseExceptionHandler();
 app.UseAuthentication();
 app.UseAuthorization();

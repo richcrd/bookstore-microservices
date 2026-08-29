@@ -1,0 +1,12 @@
+global:
+  scrape_interval: 10s
+
+scrape_configs:
+  - job_name: "bookstore"
+    static_configs:
+      - targets:
+          - "host.docker.internal:5080"
+          - "host.docker.internal:5100"
+          - "host.docker.internal:5038"
+          - "host.docker.internal:5248"
+          - "host.docker.internal:5208"

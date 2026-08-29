@@ -7,6 +7,7 @@ using Orders.Application;
 using Orders.Application.Commands.Validation;
 using Orders.Infrastructure;
 using Orders.Infrastructure.Data;
+using SharedKernel.Telemetry;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -46,6 +47,8 @@ builder.Services.AddMassTransit(x =>
         cfg.UseEntityFrameworkOutbox<OrdersDbContext>(context);
     });
 
+    x.AddOpenTelemetry();
+
     x.UsingRabbitMq((context, cfg) =>
     {
         cfg.Host(builder.Configuration["RabbitMQ:Host"] ?? "rabbitmq://localhost");
@@ -60,6 +63,8 @@ builder.Services.AddMassTransit(x =>
     });
 });
 
+builder.Services.AddServiceTelemetry(builder.Configuration, "Orders.API");
+
 var app = builder.Build();
 
 if (app.Environment.IsDevelopment())
@@ -68,6 +73,7 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
+app.UseServiceTelemetry();
 app.UseExceptionHandler();
 app.UseAuthentication();
 app.UseAuthorization();
