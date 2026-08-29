@@ -3,14 +3,19 @@ using Catalog.Application.Interfaces;
 using Catalog.Domain.Exceptions;
 using Catalog.Domain.ValueObjects;
 
-namespace Catalog.Application.Queries;
+namespace Catalog.Application.Commands;
 
-public class GetBookByIdQuery(IBookRepository bookRepository)
+public class UpdateBookPriceCommand(IBookRepository bookRepository, IUnitOfWork unitOfWork)
 {
-    public async Task<BookDto> ExecuteAsync(Guid bookId, CancellationToken cancellationToken = default)
+    public async Task<BookDto> ExecuteAsync(Guid bookId, decimal newPrice, string currency, CancellationToken cancellationToken = default)
     {
         var book = await bookRepository.GetByIdAsync(new BookId(bookId), cancellationToken)
                    ?? throw new CatalogNotFoundException($"Book with ID {bookId} not found.");
+
+        var price = new Money(newPrice, currency);
+        book.UpdatePrice(price);
+
+        await unitOfWork.SaveChangesAsync(cancellationToken);
 
         return new BookDto(
             book.Id.Value,
@@ -23,5 +28,4 @@ public class GetBookByIdQuery(IBookRepository bookRepository)
             book.CreatedAt,
             book.UpdatedAt);
     }
-    
 }

@@ -1,6 +1,38 @@
+using Catalog.API.Middleware;
+using Catalog.Application;
+using Catalog.Application.Commands.Validation;
+using Catalog.Infrastructure;
+using FluentValidation;
+
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddControllers();
+builder.Services.AddProblemDetails();
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
+
+var connectionString = builder.Configuration.GetConnectionString("CatalogDb")
+                       ?? throw new InvalidOperationException("Connection string 'CatalogDb' was not found.");
+
+builder.Services.AddInfrastructure(connectionString);
+builder.Services.AddApplication();
+builder.Services.AddValidatorsFromAssembly(typeof(CreateBookRequestValidator).Assembly);
+
+builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
+
+builder.Services.AddHealthChecks()
+    .AddNpgSql(connectionString);
+
 var app = builder.Build();
 
-app.MapGet("/", () => "Hello World!");
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
+
+app.UseExceptionHandler();
+app.MapControllers();
+app.MapHealthChecks("/health");
 
 app.Run();

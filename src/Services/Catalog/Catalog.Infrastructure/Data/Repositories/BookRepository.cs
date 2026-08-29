@@ -30,7 +30,7 @@ public class BookRepository(CatalogDbContext context) : IBookRepository
         var totalCount = await query.CountAsync(cancellationToken);
 
         var items = await query
-            .OrderBy(b => b.Price)
+            .OrderBy(b => b.Price.Amount)
             .Skip((page - 1) * pageSize) // skips old pages records, takes the current one
             .Take(pageSize)
             .ToListAsync(cancellationToken);
