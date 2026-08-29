@@ -50,6 +50,13 @@ builder.Services.AddMassTransit(x =>
     {
         cfg.Host(builder.Configuration["RabbitMQ:Host"] ?? "rabbitmq://localhost");
         cfg.ConfigureEndpoints(context);
+        cfg.UseCircuitBreaker(cb =>
+        {
+            cb.TrackingPeriod = TimeSpan.FromSeconds(60);
+            cb.TripThreshold = 5;
+            cb.ActiveThreshold = 10;
+            cb.ResetInterval = TimeSpan.FromSeconds(30);
+        });
     });
 });
 

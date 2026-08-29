@@ -47,6 +47,13 @@ public class Program
                     {
                         cfg.Host(configuration["RabbitMQ:Host"] ?? "rabbitmq://localhost");
                         cfg.ConfigureEndpoints(context);
+                        cfg.UseCircuitBreaker(cb =>
+                        {
+                            cb.TrackingPeriod = TimeSpan.FromSeconds(60);
+                            cb.TripThreshold = 5;
+                            cb.ActiveThreshold = 10;
+                            cb.ResetInterval = TimeSpan.FromSeconds(30);
+                        });
                     });
                 });
             });
