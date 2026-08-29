@@ -6,6 +6,9 @@
     <Project Path="src/BuildingBlocks/SharedKernel/SharedKernel.csproj" />
   </Folder>
   <Folder Name="/src/Services/" />
+  <Folder Name="/src/Services/Auth/">
+    <Project Path="src/Services/Auth/Auth.API/Auth.API.csproj" />
+  </Folder>
   <Folder Name="/src/Services/Catalog/">
     <Project Path="src/Services/Catalog/Catalog.API/Catalog.API.csproj" />
     <Project Path="src/Services/Catalog/Catalog.Application/Catalog.Application.csproj" />

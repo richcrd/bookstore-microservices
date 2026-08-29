@@ -1,3 +1,4 @@
+using SharedKernel.Security;
 using Catalog.API.Middleware;
 using Catalog.Application;
 using Catalog.Application.Commands.Validation;
@@ -20,6 +21,10 @@ builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddHealthChecks()
     .AddNpgSql(sp => sp.GetRequiredService<IConfiguration>().GetConnectionString("CatalogDb")!);
 
+builder.Services.AddJwtAuthentication(builder.Configuration);
+builder.Services.AddAuthorizationBuilder()
+    .AddPolicy("AdminOnly", policy => policy.RequireRole("admin"));
+
 var app = builder.Build();
 
 if (app.Environment.IsDevelopment())
@@ -29,6 +34,8 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseExceptionHandler();
+app.UseAuthentication();
+app.UseAuthorization();
 app.MapControllers();
 app.MapHealthChecks("/health");
 

@@ -3,11 +3,13 @@ using Inventory.Application.Commands;
 using Inventory.Application.DTOs;
 using Inventory.Application.Queries;
 using Inventory.Domain.ValueObjects;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 
 namespace Inventory.API.Controller;
 
+[Authorize]
 [ApiController]
 [Route("api/v1/stock-items")]
 public class StockController(

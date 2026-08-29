@@ -1,6 +1,7 @@
 using MassTransit;
 using FluentValidation;
 using Orders.API.Consumers;
+using SharedKernel.Security;
 using Orders.API.Middleware;
 using Orders.Application;
 using Orders.Application.Commands.Validation;
@@ -22,6 +23,9 @@ builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 
 builder.Services.AddHealthChecks()
     .AddNpgSql(sp => sp.GetRequiredService<IConfiguration>().GetConnectionString("OrdersDb")!);
+
+builder.Services.AddJwtAuthentication(builder.Configuration);
+builder.Services.AddAuthorizationBuilder();
 
 builder.Services.AddMassTransit(x =>
 {
@@ -58,6 +62,8 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseExceptionHandler();
+app.UseAuthentication();
+app.UseAuthorization();
 app.MapControllers();
 app.MapHealthChecks("/health");
 

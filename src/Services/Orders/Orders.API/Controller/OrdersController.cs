@@ -1,4 +1,5 @@
 using FluentValidation;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Orders.Application;
 using Orders.Application.Commands;
@@ -7,6 +8,7 @@ using Orders.Application.Queries;
 
 namespace Orders.API.Controller;
 
+[Authorize]
 [ApiController]
 [Route("api/v1/orders")]
 public class OrdersController(

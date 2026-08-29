@@ -2,6 +2,7 @@ using Catalog.Application.Commands;
 using Catalog.Application.DTOs;
 using Catalog.Application.Queries;
 using FluentValidation;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Catalog.API.Controllers;
@@ -17,6 +18,7 @@ public class BooksController(
     : ControllerBase
 {
     [HttpPost]
+    [Authorize(Policy = "AdminOnly")]
     public async Task<ActionResult<BookDto>> Create([FromBody] CreateBookRequest request,
         CancellationToken cancellationToken)
     {
@@ -35,6 +37,7 @@ public class BooksController(
     }
     
     [HttpGet("{id:guid}")]
+    [AllowAnonymous]
     public async Task<ActionResult<BookDto>> GetById(Guid id, CancellationToken cancellationToken)
     {
         var book = await getBookByIdQuery.ExecuteAsync(id, cancellationToken);
@@ -42,6 +45,7 @@ public class BooksController(
     }
 
     [HttpGet]
+    [AllowAnonymous]
     public async Task<ActionResult<PaginatedResult<BookDto>>> GetAll(
         [FromQuery] string? search,
         [FromQuery] int page = 1,
@@ -53,6 +57,7 @@ public class BooksController(
     }
     
     [HttpPatch("{id:guid}/price")]
+    [Authorize(Policy = "AdminOnly")]
     public async Task<ActionResult<BookDto>> UpdatePrice(
         Guid id,
         [FromBody] UpdateBookPriceRequest request,

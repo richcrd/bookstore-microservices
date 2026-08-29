@@ -8,7 +8,7 @@ namespace Orders.IntegrationTests;
 
 public class OrdersApiTests(OrdersApiFactory factory) : IClassFixture<OrdersApiFactory>
 {
-    private readonly HttpClient _client = factory.CreateClient();
+    private readonly HttpClient _client = factory.CreateAuthenticatedClient();
 
     [Fact]
     public async Task PostOrder_ValidRequest_ShouldReturnCreated()

@@ -2,6 +2,7 @@ using Catalog.Application.Commands;
 using Catalog.Application.DTOs;
 using Catalog.Application.Queries;
 using FluentValidation;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Catalog.API.Controllers;
@@ -15,6 +16,7 @@ public class CategoriesController(
     : ControllerBase
 {
     [HttpPost]
+    [Authorize(Policy = "AdminOnly")]
     public async Task<ActionResult<CategoryDto>> Create(
         [FromBody] CreateCategoryRequest request,
         CancellationToken cancellationToken)
@@ -32,6 +34,7 @@ public class CategoriesController(
     }
 
     [HttpGet("{id:guid}")]
+    [AllowAnonymous]
     public async Task<ActionResult<CategoryDto>> GetById(Guid id, CancellationToken cancellationToken)
     {
         var category = await getCategoryByIdQuery.ExecuteAsync(id, cancellationToken);

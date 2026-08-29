@@ -9,7 +9,7 @@ namespace Catalog.IntegrationTests;
 
 public class BooksApiTests(CatalogApiFactory factory) : IClassFixture<CatalogApiFactory>
 {
-    private readonly HttpClient _client = factory.CreateClient();
+    private readonly HttpClient _client = factory.CreateAuthenticatedClient();
     
     [Fact]
     public async Task CreateBook_WithValidRequest_Returns201Created()

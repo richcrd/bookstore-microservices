@@ -8,7 +8,7 @@ namespace Inventory.IntegrationTests;
 
 public class StockItemsApiTests(InventoryApiFactory factory) : IClassFixture<InventoryApiFactory>
 {
-    private readonly HttpClient _client = factory.CreateClient();
+    private readonly HttpClient _client = factory.CreateAuthenticatedClient();
 
     [Fact]
     public async Task Create_ValidRequest_ShouldReturnCreated()

@@ -6,6 +6,7 @@ using Inventory.Application.Commands.Validation;
 using Inventory.Infrastructure;
 using Inventory.Infrastructure.Data;
 using MassTransit;
+using SharedKernel.Security;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -22,6 +23,9 @@ builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 
 builder.Services.AddHealthChecks()
     .AddNpgSql(sp => sp.GetRequiredService<IConfiguration>().GetConnectionString("InventoryDb")!);
+
+builder.Services.AddJwtAuthentication(builder.Configuration);
+builder.Services.AddAuthorizationBuilder();
 
 builder.Services.AddMassTransit(x =>
 {
@@ -58,6 +62,8 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseExceptionHandler();
+app.UseAuthentication();
+app.UseAuthorization();
 app.MapControllers();
 app.MapHealthChecks("/health");
 
