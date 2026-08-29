@@ -1,5 +1,6 @@
 using MassTransit;
 using FluentValidation;
+using Microsoft.EntityFrameworkCore;
 using Orders.API.Consumers;
 using SharedKernel.Security;
 using Orders.API.Middleware;
@@ -79,6 +80,12 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
 app.MapHealthChecks("/health");
+
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<OrdersDbContext>();
+    db.Database.Migrate();
+}
 
 app.Run();
 

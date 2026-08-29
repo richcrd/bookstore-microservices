@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+          cache: true
+
+      - name: Restore
+        run: dotnet restore BookStore.slnx
+
+      - name: Build
+        run: dotnet build BookStore.slnx --no-restore -c Release
+
+      - name: Test
+        run: dotnet test BookStore.slnx --no-build -c Release

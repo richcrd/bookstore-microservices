@@ -1,4 +1,5 @@
 using FluentValidation;
+using Microsoft.EntityFrameworkCore;
 using Inventory.API.Consumers;
 using Inventory.API.Middleware;
 using Inventory.Application;
@@ -79,6 +80,12 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
 app.MapHealthChecks("/health");
+
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<InventoryDbContext>();
+    db.Database.Migrate();
+}
 
 app.Run();
 

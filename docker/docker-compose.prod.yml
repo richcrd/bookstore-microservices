@@ -1,0 +1,106 @@
+name: bookstore-prod
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  rabbitmq:
+    image: rabbitmq:4-management
+    healthcheck:
+      test: ["CMD-SHELL", "rabbitmq-diagnostics -q ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  catalog:
+    build:
+      context: ..
+      dockerfile: docker/Catalog/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_URLS: http://+:5038
+      ConnectionStrings__CatalogDb: Host=postgres;Port=5432;Database=catalog_db;Username=postgres;Password=postgres
+      OpenTelemetry__Endpoint: http://host.docker.internal:4317
+
+  orders:
+    build:
+      context: ..
+      dockerfile: docker/Orders/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_URLS: http://+:5248
+      ConnectionStrings__OrdersDb: Host=postgres;Port=5432;Database=orders_db;Username=postgres;Password=postgres
+      RabbitMQ__Host: rabbitmq://rabbitmq
+      CatalogApi__BaseAddress: http://catalog:5038
+      OpenTelemetry__Endpoint: http://host.docker.internal:4317
+
+  inventory:
+    build:
+      context: ..
+      dockerfile: docker/Inventory/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_URLS: http://+:5208
+      ConnectionStrings__InventoryDb: Host=postgres;Port=5432;Database=inventory_db;Username=postgres;Password=postgres
+      RabbitMQ__Host: rabbitmq://rabbitmq
+      OpenTelemetry__Endpoint: http://host.docker.internal:4317
+
+  auth:
+    build:
+      context: ..
+      dockerfile: docker/Auth/Dockerfile
+    environment:
+      ASPNETCORE_URLS: http://+:5100
+      OpenTelemetry__Endpoint: http://host.docker.internal:4317
+
+  sagaworker:
+    build:
+      context: ..
+      dockerfile: docker/OrderSaga/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      ConnectionStrings__OrderSagaDb: Host=postgres;Port=5432;Database=order_saga_db;Username=postgres;Password=postgres
+      RabbitMQ__Host: rabbitmq://rabbitmq
+      OpenTelemetry__Endpoint: http://host.docker.internal:4317
+
+  apigateway:
+    build:
+      context: ..
+      dockerfile: docker/ApiGateway/Dockerfile
+    ports:
+      - "80:5080"
+    environment:
+      OpenTelemetry__Endpoint: http://host.docker.internal:4317
+      ReverseProxy__Clusters__catalog__Destinations__catalog-1__Address: http://catalog:5038/
+      ReverseProxy__Clusters__orders__Destinations__orders-1__Address: http://orders:5248/
+      ReverseProxy__Clusters__inventory__Destinations__inventory-1__Address: http://inventory:5208/
+      ReverseProxy__Clusters__auth__Destinations__auth-1__Address: http://auth:5100/
+
+volumes:
+  pgdata:

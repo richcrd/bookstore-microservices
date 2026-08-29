@@ -1,0 +1,12 @@
+bin/
+obj/
+.vs/
+.idea/
+*.user
+*.suo
+.git/
+docker/postgres/init/
+login/
+node_modules/
+TestResults/
+*.log

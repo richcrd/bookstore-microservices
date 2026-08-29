@@ -1,8 +1,10 @@
+using Microsoft.EntityFrameworkCore;
 using SharedKernel.Security;
 using Catalog.API.Middleware;
 using Catalog.Application;
 using Catalog.Application.Commands.Validation;
 using Catalog.Infrastructure;
+using Catalog.Infrastructure.Data;
 using FluentValidation;
 using SharedKernel.Telemetry;
 
@@ -42,6 +44,12 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
 app.MapHealthChecks("/health");
+
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<CatalogDbContext>();
+    db.Database.Migrate();
+}
 
 app.Run();
 
