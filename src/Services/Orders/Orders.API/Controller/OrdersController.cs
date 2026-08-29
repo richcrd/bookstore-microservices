@@ -1,6 +1,7 @@
 using FluentValidation;
 using Microsoft.AspNetCore.Mvc;
 using Orders.Application;
+using Orders.Application.Commands;
 using Orders.Application.DTOs;
 using Orders.Application.Queries;
 
@@ -12,7 +13,8 @@ public class OrdersController(
     CreateOrderCommand createOrderCommand,
     GetOrderByIdQuery getOrderByIdQuery,
     GetOrdersQuery getOrdersQuery,
-    IValidator<CreateOrderRequest> createOrderValidator
+    IValidator<CreateOrderRequest> createOrderValidator,
+    UpdateOrderStatusCommand updateOrderStatusCommand
     ) : ControllerBase
 {
     [HttpPost]
@@ -50,5 +52,15 @@ public class OrdersController(
     {
         var result = await getOrdersQuery.ExecuteAsync(customerId, page, pageSize, cancellationToken);
         return Ok(result);
+    }
+
+    [HttpPatch("{id:guid}/status")]
+    public async Task<ActionResult<OrderDto>> UpdateStatus(
+        Guid id,
+        [FromBody] UpdateOrderStatusRequest request,
+        CancellationToken cancellationToken)
+    {
+        var order = await updateOrderStatusCommand.ExecuteAsync(id, request.Status, cancellationToken);
+        return Ok(order);
     }
 }
