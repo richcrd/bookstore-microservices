@@ -11,17 +11,14 @@ builder.Services.AddProblemDetails();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-var connectionString = builder.Configuration.GetConnectionString("CatalogDb")
-                       ?? throw new InvalidOperationException("Connection string 'CatalogDb' was not found.");
-
-builder.Services.AddInfrastructure(connectionString);
+builder.Services.AddInfrastructure();
 builder.Services.AddApplication();
 builder.Services.AddValidatorsFromAssembly(typeof(CreateBookRequestValidator).Assembly);
 
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 
 builder.Services.AddHealthChecks()
-    .AddNpgSql(connectionString);
+    .AddNpgSql(sp => sp.GetRequiredService<IConfiguration>().GetConnectionString("CatalogDb")!);
 
 var app = builder.Build();
 
@@ -36,3 +33,5 @@ app.MapControllers();
 app.MapHealthChecks("/health");
 
 app.Run();
+
+public partial class Program { }
