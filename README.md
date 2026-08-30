@@ -24,6 +24,7 @@
 - [Testing](#testing)
 - [Deploy / CI-CD](#deploy--ci-cd)
 - [Observabilidad](#observabilidad)
+- [Fases de desarrollo](docs/phases.md) · [Arquitectura de detalle](docs/architecture.md)
 - [Changelog](#changelog)
 - [Contributing](#contributing)
 - [Licencia](#licencia)
@@ -208,6 +209,8 @@ dotnet test BookStore.slnx
 Necesita secrets en el repo: `SERVER_HOST`, `SERVER_USER`, `SSH_PRIVATE_KEY` y la variable `DEPLOY_DIR`.
 
 **Stack de producción** (`docker/docker-compose.prod.yml`): 9 contenedores (Postgres + RabbitMQ propios, 6 servicios y el gateway) con el gateway publicado en **`:80`**.
+
+Historial completo de **fases construidas** (qué se añadió, qué no y por qué) en [docs/phases.md](docs/phases.md).
 
 ## Observabilidad
 
