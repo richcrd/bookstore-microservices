@@ -432,3 +432,6 @@ FodyWeavers.xsd
 # User-specific files
 appsettings.Development.json
 *.DotSettings.user
+
+# AI coding assistant
+.claude/
