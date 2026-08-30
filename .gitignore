@@ -435,3 +435,5 @@ appsettings.Development.json
 
 # AI coding assistant
 .claude/
+.opencode/
+CLAUDE.md
