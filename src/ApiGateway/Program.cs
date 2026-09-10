@@ -36,13 +36,27 @@ builder.Services.AddRateLimiter(options =>
 
 builder.Services.AddHealthChecks();
 
+var allowedOrigins = builder.Configuration
+    .GetSection("Cors:AllowedOrigins")
+    .Get<string[]>() ?? [];
+
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("Frontend", policy =>
+    {
+        policy.WithOrigins(allowedOrigins)
+            .AllowAnyHeader()
+            .AllowAnyMethod();
+    });
+});
+
 builder.Services.AddServiceTelemetry(builder.Configuration, "ApiGateway");
 
 var app = builder.Build();
 
 app.UseServiceTelemetry();
 app.UseRateLimiter();
-
+app.UseCors("Frontend");
 app.MapReverseProxy();
 app.MapHealthChecks("/health");
 
