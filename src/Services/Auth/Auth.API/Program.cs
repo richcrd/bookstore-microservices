@@ -14,6 +14,8 @@ builder.Services.AddAuthServices(builder.Configuration);
 var app = builder.Build();
 
 app.UseServiceTelemetry();
+app.UseAuthentication();
+app.UseAuthorization();
 
 app.MapControllers();
 app.MapHealthChecks("/health");
@@ -65,10 +67,11 @@ await using (var scope = app.Services.CreateAsyncScope())
                 OpenIddictConstants.Permissions.Endpoints.EndSession,
                 OpenIddictConstants.Permissions.Endpoints.Token,
                 OpenIddictConstants.Permissions.GrantTypes.AuthorizationCode,
+                OpenIddictConstants.Permissions.GrantTypes.RefreshToken,
                 OpenIddictConstants.Permissions.ResponseTypes.Code,
-                OpenIddictConstants.Permissions.Prefixes.Scope + OpenIddictConstants.Permissions.Scopes.Profile,
-                OpenIddictConstants.Permissions.Prefixes.Scope + OpenIddictConstants.Permissions.Scopes.Email,
-                OpenIddictConstants.Permissions.Prefixes.Scope + OpenIddictConstants.Permissions.Scopes.Roles,
+                OpenIddictConstants.Permissions.Prefixes.Scope + OpenIddictConstants.Scopes.Profile,
+                OpenIddictConstants.Permissions.Prefixes.Scope + OpenIddictConstants.Scopes.Email,
+                OpenIddictConstants.Permissions.Prefixes.Scope + OpenIddictConstants.Scopes.Roles,
                 OpenIddictConstants.Permissions.Prefixes.Scope + OpenIddictConstants.Scopes.OfflineAccess
             },
             Requirements =

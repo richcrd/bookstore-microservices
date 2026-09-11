@@ -1,4 +1,5 @@
 using Auth.API.Data;
+using Auth.API.Services;
 using Auth.API.Stores;
 using Microsoft.EntityFrameworkCore;
 
@@ -9,6 +10,9 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddAuthServices(this IServiceCollection services, IConfiguration configuration)
     {
         services.AddControllers();
+
+        services.AddAuthentication();
+        services.AddAuthorization();
 
         services.AddDbContext<AuthDbContext>(options =>
         {
@@ -59,6 +63,7 @@ public static class ServiceCollectionExtensions
 
         services.AddSingleton(settings);
         services.AddSingleton<DemoUserStore>();
+        services.AddScoped<AuthorizationService>();
 
         return services;
     }
