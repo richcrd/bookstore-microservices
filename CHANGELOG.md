@@ -8,8 +8,9 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y el p
 
 ### Added
 
-- Autenticación **JWT** con roles (`admin`/`customer`): login en `POST /api/v1/auth/token` (Auth.API).
-- **API Gateway YARP** como punto único de entrada (`:5080` dev, `:80` prod) con rutas `/api/v1/*` hacia catalog, orders, inventory y auth.
+- **Proveedor OpenID Connect / OAuth 2.0** (OpenIddict 7) en Auth.API: página de login en `/connect/authorize`, token endpoint `/connect/token` con *password*/*refresh* (cliente `cli`) y *Authorization Code + PKCE* (cliente `web-spa`), discovery en `/.well-known/*`.
+- **Validación por discovery (RS256)** en Catalog/Orders/Inventory vía `OpenIddict.Validation` (SharedKernel `AddIdpAuthentication`): los servicios descargan claves y validan `iss` sin firma compartida hardcodeada.
+- **API Gateway YARP** como punto único de entrada (`:5080` dev, `:80` prod) con rutas `/api/v1/*` hacia catalog, orders e inventory y endpoints OIDC (`/connect/*`, `/.well-known/*`) hacia auth.
 - **Orden Saga orquestada** con `MassTransit`: state machine (pendiente → pago → reserva → `Shipped`), con **outbox/inbox transaccional** (sin pérdida ni duplicados).
 - Consumidores RabbitMQ: `OrderCreatedConsumer` y `OrderStatusChangedConsumer` en Inventory; endpoint `change-order-status` en Orders.
 - **Idempotencia** en la creación de pedidos vía header `Idempotency-Key` (GUID): `201` la primera vez, `200` con el mismo pedido en reintentos; clave generada automáticamente si no se envía.
@@ -24,7 +25,9 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y el p
 
 - Destinos del gateway configurables por entorno: `${ReverseProxy__Clusters__*__Destinations__*__Address}` para que los contenedores del stack de prod enruten por nombre de servicio y no por `localhost`.
 - Los servicios con base de datos aplican `Migrate()` al arrancar en lugar de depender de dumps de BD.
-- El login se expone como `POST /api/v1/auth/token` a través del gateway.
+- El token se obtiene ahora por OIDC a través del gateway (`POST /connect/token`, password grant) en lugar de `POST /api/v1/auth/token`.
+- El issuer público del proveedor es configurable (`OpenIddict__Issuer`; en prod `BOOKSTORE_PUBLIC_ISSUER`, default `http://localhost`).
+- Auth.API pasa a usar su propia base `auth_db` (aplicaciones/scopes/autorizaciones OpenIddict); el compose de prod la conecta y añade `depends_on: postgres`.
 
 ### Fixed
 

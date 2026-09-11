@@ -22,8 +22,9 @@
 | 11. Idempotencia | Retry-safe en creación de pedidos | 201/200 con misma key | ✔ |
 | 12. Estabilización CI | Pipeline reproducible | CI verde en GitHub | ✔ |
 | 13. Documentación | Repo enterprise (README, CONTRIBUTING, etc.) | Docs enlazadas | ✔ |
+| 14. Seguridad OIDC | Proveedor OpenID Connect + validación por discovery | Login OIDC + 401/403 + suite verde | ✔ |
 
-**Estado final**: 92 tests en verde · 33 commits · CI/CD operativo · stack prod validado.
+**Estado final**: 92 tests en verde · CI/CD operativo · stack prod validado.
 
 ---
 
@@ -218,3 +219,22 @@ OrderCreated → AwaitingPayment → (PaymentApproved) → ShipmentRequested →
 - **Banner/demo del producto**: pendiente de capturas con el frontend futuro.
 
 **Verificación**: docs coherentes y enlazadas entre sí; `git status` limpio tras el commit.
+
+---
+
+## Fase 14 — Seguridad: OpenID Connect (OpenIddict)
+
+**Qué se añadió**: migración del JWT firmado por HMAC a un **proveedor OIDC estándar** con **OpenIddict 7** en `Auth.API`:
+
+- Token endpoint (`/connect/token`) con **password** y **refresh** (cliente confidencial `cli`) y **Authorization Code + PKCE** (cliente público `web-spa`); página de login HTML en `/connect/authorize`.
+- Persistencia de aplicaciones, scopes y autorizaciones en `auth_db` (OpenIddict EF Core), sembradas al arranque.
+- **Validación por discovery (RS256)** en Catalog/Orders/Inventory vía `OpenIddict.Validation` (`AddIdpAuthentication` en SharedKernel): sin clave de firma compartida configurada; cada servicio descarga el documento y comprueba `iss`.
+- **Gateway YARP** expone también `/.well-known/{**cat-catch-all}` y `/connect/{**catch-all}` (la antigua ruta `/api/v1/auth/*` se eliminó, ya sin controladores).
+- Tests de integración migrados al esquema de test (`TestAuthHandler`): la suite no depende de la firma real.
+
+**Qué no se añadió y por qué**:
+- **No hay certificados de producción ni HTTPS**: OpenIddict usa `AddDevelopment*Certificates`; el transporte seguro y los certificados persistentes quedan como requisito del despliegue real (deuda documentada en architecture.md §16).
+- **No hay revocación de tokens de acceso ni logout del frontend**: se mitiga con vida corta (30 min) y refresh tokens *reference*; la revocación por sesión es trabajo futuro con el frontend.
+- **El SPA aún no existe**: el cliente `web-spa` está sembrado y listo (PKCE) para el frontend futuro.
+
+**Verificación**: flujo Authorization Code + PKCE completo validado (login HTML → `code` → `access_token`); password grant por `cli` desde el gateway; discovery pública en `/.well-known/openid-configuration`; checkpoint sin token → **401**, admin → **201**, customer → **403**; suite **92/92** en verde.

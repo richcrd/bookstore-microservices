@@ -1,6 +1,6 @@
 # bookstore-microservices
 
-**Microservicios de una librería online en .NET 10 con Clean Architecture**: un sistema completo y desplegable compuesto por 5 APIs + una saga orquestada por mensajes, con autenticación JWT, resiliencia, observabilidad y pipeline CI/CD.
+**Microservicios de una librería online en .NET 10 con Clean Architecture**: un sistema completo y desplegable compuesto por 5 APIs + una saga orquestada por mensajes, con autenticación OpenID Connect, resiliencia, observabilidad y pipeline CI/CD.
 
 ---
 
@@ -31,8 +31,8 @@
 
 ## Features
 
-- **Un solo punto de entrada**: gateway YARP que enruta `/api/v1/*` a los servicios internos (y reescribe destinos en prod).
-- **Autenticación JWT** centralizada (login en `Auth.API`, validación por firma en el resto).
+- **Un solo punto de entrada**: gateway YARP que enruta `/api/v1/*` y los endpoints OIDC (`/connect/*`, `/.well-known/*`) a los servicios internos (y reescribe destinos en prod).
+- **Autenticación OpenID Connect** centralizada (`Auth.API` actúa de **proveedor OIDC** con OpenIddict — Authorization Code + PKCE para SPA, *password*/*refresh* para clientes confidenciales; los demás servicios validan los tokens por *discovery*).
 - **Saga distribuida** con `MassTransit` + patrón **Outbox/Inbox** transaccional (sin pérdida ni duplicado de mensajes).
 - **Resiliencia**: reintentos exponenciales y circuit breaker (`Microsoft.Extensions.Http.Resilience`/Polly).
 - **Idempotencia**: header `Idempotency-Key` en `POST /orders` (retry seguro sin duplicar pedidos).
@@ -48,8 +48,8 @@
 
 ```mermaid
 flowchart TB
-    C["Cliente (REST + JWT)"] -->|"/api/v1/*"| GW["ApiGateway (YARP)<br/>dev :5080 · prod :80"]
-    GW --> AUTH["Auth.API :5100"]
+    C["Cliente (REST + OIDC token)"] -->|"/api/v1/*"| GW["ApiGateway (YARP)<br/>dev :5080 · prod :80"]
+    GW --> AUTH["Auth.API :5100<br/>OIDC provider"]
     GW --> CAT["Catalog.API :5038"]
     GW --> ORD["Orders.API :5248"]
     GW --> INV["Inventory.API :5208"]
@@ -66,6 +66,7 @@ flowchart TB
     ORD --> PGO[("orders_db")]
     INV --> PGI[("inventory_db")]
     SAGA --> PGS[("order_saga_db")]
+    AUTH --> PGA[("auth_db")]
 
     subgraph Observabilidad
         J["Jaeger :16686 (OTLP)"]
@@ -74,7 +75,7 @@ flowchart TB
     end
 ```
 
-**Flujo típico**: el cliente pide un token → crea un pedido (Orders valida contra Catalog con el snapshot de precio) → el evento viaja por el outbox a RabbitMQ → la saga coordina pago (simulado) → Inventory reserva y descuenta stock → el pedido pasa a `Shipped`.
+**Flujo típico**: el cliente obtiene un token con su flujo OIDC (Authorization Code + PKCE desde el SPA o *password grant* desde la CLI) → crea un pedido (Orders valida contra Catalog con el snapshot de precio) → el evento viaja por el outbox a RabbitMQ → la saga coordina pago (simulado) → Inventory reserva y descuenta stock → el pedido pasa a `Shipped`.
 
 ## Requisitos previos
 
@@ -136,14 +137,13 @@ flowchart TB
 | `ConnectionStrings__OrderSagaDb` | `Host=localhost;Database=order_saga_db;...` | BD de la saga |
 | `RabbitMQ__Host` | `rabbitmq://localhost` | Broker de mensajería (en prod `rabbitmq://rabbitmq`) |
 | `CatalogApi__BaseAddress` | `http://localhost:5038` | HTTP a Catalog usado por Orders |
-| `Jwt__Issuer` | `BookstoreAuth` | Emisor del token |
-| `Jwt__Audience` | `BookstoreClient` | Audiencia del token |
-| `Jwt__SigningKey` | `(dev)` | Clave HMAC-SHA256 de firma |
-| `Jwt__AccessTokenLifetimeMinutes` | `30` | Vida del token |
+| `OpenIddict__Issuer` | `http://localhost:5100` | Issuer público del proveedor OIDC; los servicios lo usan para descubrir claves y validar el `iss` (en prod = URL pública del gateway, env `BOOKSTORE_PUBLIC_ISSUER`) |
+| `OpenIddict__SpaClientId`/`SpaRedirectUri` | `web-spa` / `http://localhost:5173/callback` | Cliente público SPA (Authorization Code + PKCE) sembrado al arrancar |
+| `OpenIddict__CliClientId`/`CliClientSecret` | `cli` / `cli-dev-secret` | Cliente confidencial para la CLI (*password*/*refresh* grant) |
 | `OpenTelemetry__Endpoint` | `http://localhost:4317` | Endpoint OTLP (Jaeger) |
 | `ReverseProxy__Clusters__<name>__Destinations__<dest>__Address` | `http://localhost:<puerto>` | Destinos YARP por servicio (sobrescritos en prod) |
 
-> ⚠️ Las claves (`Jwt__SigningKey` y contraseñas de BD) están en `appsettings.json` con valores de **desarrollo**. Para producción deben venir de *secrets* (GitHub Secrets / Docker secrets / Vault).
+> ⚠️ Los secretos (`OpenIddict__Issuer` público, `CliClientSecret` y contraseñas de BD) deben venir de *secrets* en producción (GitHub Secrets / Docker secrets / Vault); los valores de `appsettings.json` son de **desarrollo**.
 
 ## Uso / API
 
@@ -151,7 +151,8 @@ La documentación completa de cada contrato está en el **Swagger** de cada serv
 
 | Método | Ruta | Servicio |
 |---|---|---|
-| POST | `/api/v1/auth/token` | Auth |
+| POST | `/connect/token` · `/connect/authorize` · `/connect/logout` | Auth (endpoints OIDC) |
+| GET | `/.well-known/openid-configuration` · `/.well-known/jwks` | Auth (discovery) |
 | GET/POST | `/api/v1/books`, `/api/v1/categories` | Catalog |
 | GET/POST/PATCH | `/api/v1/orders/...` | Orders |
 | GET/POST | `/api/v1/stock-items/...` | Inventory |
@@ -159,10 +160,13 @@ La documentación completa de cada contrato está en el **Swagger** de cada serv
 **Credenciales demo**: `admin/admin123` (rol `admin`) y `customer/customer123` (rol `customer`).
 
 ```bash
-# Token
-TOKEN=$(curl -s -X POST http://localhost:5080/api/v1/auth/token \
-  -H "Content-Type: application/json" \
-  -d '{"username":"customer","password":"customer123"}' | jq -r .token)
+# Discovery OIDC a través del gateway
+curl -s http://localhost:5080/.well-known/openid-configuration
+
+# Token con el cliente confidencial "cli" (password grant)
+TOKEN=$(curl -s -X POST http://localhost:5080/connect/token \
+  -d "grant_type=password&client_id=cli&client_secret=cli-dev-secret&username=customer&password=customer123&scope=openid profile roles offline_access" \
+  | jq -r .access_token)
 
 # Crear pedido (idempotente: misma Idempotency-Key → mismo pedido)
 curl -s -X POST http://localhost:5080/api/v1/orders \
@@ -178,9 +182,9 @@ curl -s -X POST http://localhost:5080/api/v1/orders \
 ```
 src/
 ├── ApiGateway/                        # Punto único de entrada (YARP + rutas)
-├── BuildingBlocks/SharedKernel/       # JWT, telemetría OpenTelemetry y utilidades compartidas
+├── BuildingBlocks/SharedKernel/       # OpenIddict (validación), telemetría y utilidades compartidas
 └── Services/
-    ├── Auth/Auth.API/                 # Login y emisión de JWT
+    ├── Auth/Auth.API/                 # Proveedor OpenID Connect (login, tokens y discovery)
     ├── Catalog/                       # Catálogo: API + Application + Domain + Infrastructure
     ├── Orders/                        # Órdenes: API + Application + Domain + Infrastructure
     ├── Inventory/                     # Stock: API + Application + Domain + Infrastructure

@@ -27,8 +27,8 @@ Objetivos arquitectónicos: un único punto de entrada, desacople por mensajerí
 
 ```mermaid
 flowchart TB
-    C["Cliente (REST + JWT)"] -->|"/api/v1/*"| GW["ApiGateway (YARP)<br/>dev :5080 · prod :80"]
-    GW --> AUTH["Auth.API :5100<br/>login + JWT"]
+    C["Cliente (REST + OIDC token)"] -->|"/api/v1/*"| GW["ApiGateway (YARP)<br/>dev :5080 · prod :80"]
+    GW --> AUTH["Auth.API :5100<br/>proveedor OIDC"]
     GW --> CAT["Catalog.API :5038<br/>books / categories"]
     GW --> ORD["Orders.API :5248<br/>pedidos / saga endpoints"]
     GW --> INV["Inventory.API :5208<br/>stock"]
@@ -45,6 +45,7 @@ flowchart TB
     ORD --> PGO[("orders_db<br/>+ outbox/inbox)")]
     INV --> PGI[("inventory_db<br/>+ outbox/inbox)")]
     SAGA --> PGS[("order_saga_db<br/>saga state + inbox)")]
+    AUTH --> PGA[("auth_db<br/>aplicaciones/autorizaciones)")]
 ```
 
 ## 4. Componentes
@@ -52,7 +53,7 @@ flowchart TB
 | Componente | Rol | Puerta de entrada |
 |---|---|---|
 | **ApiGateway** | Punto único de entrada (YARP), enrutado y reescritura de destinos | `:5080` dev / `:80` prod (único puerto público) |
-| **Auth.API** | Emisión y validación de JWT | `/api/v1/auth/*` |
+| **Auth.API** | **Proveedor OpenID Connect** (OpenIddict): login, emisión de tokens y *discovery* | `/connect/*` · `/.well-known/*` |
 | **Catalog.API** | Catálogo de libros y categorías | `/api/v1/books/*`, `/api/v1/categories/*` |
 | **Orders.API** | Creación y estados de pedidos, productor/consumidor de mensajes | `/api/v1/orders/*` |
 | **Inventory.API** | Stock: reserva, descuento y liberación | `/api/v1/stock-items/*` |
@@ -62,7 +63,7 @@ flowchart TB
 
 ## 5. Enrutado del gateway (YARP)
 
-Rutas definidas en `src/ApiGateway/appsettings.json` (todas con preﬁjo `/api/v1`):
+Rutas definidas en `src/ApiGateway/appsettings.json`:
 
 | Ruta | Cluster (servicio) | Destino |
 |---|---|---|
@@ -70,7 +71,10 @@ Rutas definidas en `src/ApiGateway/appsettings.json` (todas con preﬁjo `/api/v
 | `/api/v1/categories/{**catch-all}` | `catalog` | ídem |
 | `/api/v1/orders/{**catch-all}` | `orders` → `orders-1` | `http://orders:5248/` |
 | `/api/v1/stock-items/{**catch-all}` | `inventory` → `inventory-1` | `http://inventory:5208/` |
-| `/api/v1/auth/{**catch-all}` | `auth` → `auth-1` | `http://auth:5100/` |
+| `/connect/{**catch-all}` | `auth` → `auth-1` | `http://auth:5100/` |
+| `/.well-known/{**catch-all}` | `auth` | ídem |
+
+Los endpoints **OIDC** (`/connect/*`, `/.well-known/*`) se exponen por el gateway para que clientes y validadores resuelvan *discovery* y emisión de tokens contra la **URL pública** (en prod, el issuer `OpenIddict__Issuer` = `BOOKSTORE_PUBLIC_ISSUER`, default `http://localhost`).
 
 En el stack de producción las direcciones se inyectan por entorno (`ReverseProxy__Clusters__*__Destinations__*__Address`), porque dentro del *overlay network* de Docker los contenedores se resuelven por **nombre de servicio**, no por `localhost`.
 
@@ -180,23 +184,28 @@ Garantiza que reintentos de red por timeout no dupliquen pedidos ni reservas.
 
 ## 12. Seguridad y autenticación
 
-- **JWT HMAC-SHA256**: `Auth.API` emite tokens (credenciales demo `admin/admin123`, `customer/customer123`); el resto de servicios validan por firma (`Jwt__Issuer`, `Jwt__Audience`, `Jwt__SigningKey`).
-- **Roles**: `admin`/`customer` con políticas de autorización (`AdminOnly` para operaciones de inventario y otras protegidas).
+- **OpenID Connect / OAuth 2.0** con **OpenIddict 7**: `Auth.API` es el **proveedor de identidad** (issuer `OpenIddict__Issuer`). Clientes sembrados al arranque:
+  - `web-spa` (público): **Authorization Code + PKCE** + refresh para el frontend.
+  - `cli` (confidencial, `CliClientSecret`): **password grant** + refresh para la CLI/scripts.
+  - Tokens RS256 (firmados con certificado de desarrollo; HTTPS + certificado real pendiente en prod), vida 30 min, refresh 14 días.
+- **Validación por *discovery***: Catalog/Orders/Inventory usan `OpenIddict.Validation` → descargan el documento de discovery del issuer y validan `iss`/firma/claves (sin firma compartida hardcodeada).
+- **Roles**: `admin`/`customer` viajan en el claim `role` y las políticas de autorización usan `RequireClaim("role", ...)` (`AdminOnly` para inventario y otras operaciones protegidas).
 - **Secrets**: claves y contraseñas de producción nunca en `appsettings.json` (ver SECURITY/CONTRIBUTING); catálogo no requiere token para lectura.
-- El reverse-proxy expone únicamente `/api/v1/*`.
+- El reverse-proxy expone `/api/v1/*`, `/connect/*` y `/.well-known/*`; el resto no es accesible desde el exterior.
 
 ## 13. Persistencia
 
-4 bases PostgreSQL 17, ownership por servicio (*database per service*):
+5 bases PostgreSQL 17, ownership por servicio (*database per service*):
 
 | Base | Servicio | Particularidad |
 |---|---|---|
 | `catalog_db` | Catalog.API | 1 migración |
-| `orders_db` | Orders.API | 2 migraciones (+ idempotencia, outbox/inbox) |
+| `orders_db` | Orders.API | 3 migraciones (+ idempotencia, outbox/inbox) |
 | `inventory_db` | Inventory.API | 2 migraciones (+ outbox/inbox) |
 | `order_saga_db` | OrderSaga.Worker | 1 migración (saga state + inbox) |
+| `auth_db` | Auth.API | 1 migración (apps/scopes/autorizaciones OpenIddict) |
 
-- Cada Base aplica **`db.Database.Migrate()` al arrancar** (migraciones automáticas); el script `docker/postgres/init/001-create-databases.sql` crea las bases en entornos limpios.
+- Cada Base aplica **`db.Database.Migrate()` al arrancar** (migraciones automáticas); el script `docker/postgres/init/001-create-databases.sql` crea las 5 bases en entornos limpios.
 - El dominio de inventario modela `QuantityOnHand`, `ReservedQuantity` y `Available`.
 
 ## 14. Observabilidad
@@ -210,7 +219,7 @@ Garantiza que reintentos de red por timeout no dupliquen pedidos ni reservas.
 Dos modos de ejecución equivalentes (no duplicados):
 
 - **Dev** (iteración): 6 procesos `dotnet run` en puertos dedicados + contenedores de infraestructura (`bookstore-postgres`, `bookstore-rabbitmq`, y opcional observabilidad por `docker-compose.observability.yml`).
-- **Prod** (`docker/docker-compose.prod.yml`): 9 contenedores con Postgres/RabbitMQ propios en red interna; **único puerto público `:80`** (gateway). Los destinos YARP se inyectan por variables de entorno.
+- **Prod** (`docker/docker-compose.prod.yml`): 9 contenedores con Postgres/RabbitMQ propios en red interna; **único puerto público `:80`** (gateway). Los destinos YARP se inyectan por variables de entorno; el issuer OIDC público viene de `BOOKSTORE_PUBLIC_ISSUER` (default `http://localhost`).
 
 **CI/CD** (`../../.github/workflows/`):
 - `ci.yml`: en cada push/PR a `main` → `dotnet restore` + `build` + `test` (unit + integración con Testcontainers).
@@ -234,13 +243,13 @@ flowchart LR
 ## 16. Limitaciones y roadmap
 
 - **Payment-gateway simulado** (éxito si `Total < 10.000`): sustituible por un proveedor real sin cambiar la saga (mismo contrato `RequestPaymentCommand`/`PaymentCompleted`).
-- **Sin CORS configurado**: el cliente web futuro (SPA) deberá añadir origin en el gateway.
-- **Catálogo sin mensajería** de momento; Auth no usa base de datos.
-- Pendientes: **ADR** de las decisiones clave (`docs/adr/`), contratos versionados y *contract testing*, y frontend (React/Vue/Blazor) consumiendo el gateway.
+- **Certificados de desarrollo en OpenIddict** (`AddDevelopmentEncryptionCertificate`): en un despliegue real hay que proveer certificados de firma/cifrado persistentes y expirar a HTTPS.
+- **Catálogo sin mensajería** de momento.
+- Pendientes: máis ADR de decisiones clave en `docs/adr/`, contratos versionados y *contract testing*, y frontend (React/Vue/Blazor) consumiendo el gateway por Authorization Code + PKCE.
 
 ## 17. Decisiones de arquitectura (ADR)
 
-Las decisiones registrarán en `docs/adr/` (`adr-NNNN-título.md`). Candidatas próximas: motor de saga (MassTransit + EF), patrón outbox/inbox, reserva temprana de stock, idempotencia por header y auto-migraciones.
+Registradas en `docs/adr/` (`adr-NNNN-título.md`). Candidatas próximas: motor de saga (MassTransit + EF), patrón outbox/inbox, reserva temprana de stock e idempotencia por header.
 
 ## 18. Referencias
 
