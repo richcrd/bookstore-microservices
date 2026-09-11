@@ -6,6 +6,7 @@ using Catalog.Application.Commands.Validation;
 using Catalog.Infrastructure;
 using Catalog.Infrastructure.Data;
 using FluentValidation;
+using OpenIddict.Abstractions;
 using SharedKernel.Telemetry;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -24,9 +25,9 @@ builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddHealthChecks()
     .AddNpgSql(sp => sp.GetRequiredService<IConfiguration>().GetConnectionString("CatalogDb")!);
 
-builder.Services.AddJwtAuthentication(builder.Configuration);
+builder.Services.AddIdpAuthentication(builder.Configuration);
 builder.Services.AddAuthorizationBuilder()
-    .AddPolicy("AdminOnly", policy => policy.RequireRole("admin"));
+    .AddPolicy("AdminOnly", policy => policy.RequireClaim(OpenIddictConstants.Claims.Role, "admin"));
 
 builder.Services.AddServiceTelemetry(builder.Configuration, "Catalog.API");
 

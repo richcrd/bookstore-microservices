@@ -26,7 +26,7 @@ builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddHealthChecks()
     .AddNpgSql(sp => sp.GetRequiredService<IConfiguration>().GetConnectionString("InventoryDb")!);
 
-builder.Services.AddJwtAuthentication(builder.Configuration);
+builder.Services.AddIdpAuthentication(builder.Configuration);
 builder.Services.AddAuthorizationBuilder();
 
 builder.Services.AddMassTransit(x =>
