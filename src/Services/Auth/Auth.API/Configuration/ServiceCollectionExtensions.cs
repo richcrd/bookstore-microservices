@@ -33,9 +33,9 @@ public static class ServiceCollectionExtensions
             {
                 options.SetIssuer(new Uri(settings.Issuer));
 
-                options.SetAuthorizationEndpointUris($"{settings.Issuer}/connect/authorize");
-                options.SetTokenEndpointUris($"{settings.Issuer}/connect/token");
-                options.SetEndSessionEndpointUris($"{settings.Issuer}/connect/logout");
+                options.SetAuthorizationEndpointUris("connect/authorize");
+                options.SetTokenEndpointUris("connect/token");
+                options.SetEndSessionEndpointUris("connect/logout");
 
                 options.SetAccessTokenLifetime(TimeSpan.FromMinutes(30));
                 options.SetRefreshTokenLifetime(TimeSpan.FromDays(14));

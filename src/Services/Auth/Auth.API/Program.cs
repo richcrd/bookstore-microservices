@@ -50,35 +50,42 @@ await using (var scope = app.Services.CreateAsyncScope())
         }
     }
 
-    // web-spa Authorization Code + PKCE
-    if (await applications.FindByClientIdAsync(settings.SpaClientId) is null)
+    var spaDescriptor = new OpenIddictApplicationDescriptor()
     {
-        await applications.CreateAsync(new OpenIddictApplicationDescriptor()
+        ClientId = settings.SpaClientId,
+        ClientType = OpenIddictConstants.ClientTypes.Public,
+        ConsentType = OpenIddictConstants.ConsentTypes.Implicit,
+        DisplayName = "BookStore SPA",
+        RedirectUris = { new Uri(settings.SpaRedirectUri) },
+        PostLogoutRedirectUris = { new Uri(settings.SpaPostLogoutRedirectUri) },
+        Permissions =
         {
-            ClientId = settings.SpaClientId,
-            ClientType = OpenIddictConstants.ClientTypes.Public,
-            ConsentType = OpenIddictConstants.ConsentTypes.Implicit,
-            DisplayName = "BookStore SPA",
-            RedirectUris = { new Uri(settings.SpaRedirectUri) },
-            PostLogoutRedirectUris = { new Uri(settings.SpaPostLogoutRedirectUri) },
-            Permissions =
-            {
-                OpenIddictConstants.Permissions.Endpoints.Authorization,
-                OpenIddictConstants.Permissions.Endpoints.EndSession,
-                OpenIddictConstants.Permissions.Endpoints.Token,
-                OpenIddictConstants.Permissions.GrantTypes.AuthorizationCode,
-                OpenIddictConstants.Permissions.GrantTypes.RefreshToken,
-                OpenIddictConstants.Permissions.ResponseTypes.Code,
-                OpenIddictConstants.Permissions.Prefixes.Scope + OpenIddictConstants.Scopes.Profile,
-                OpenIddictConstants.Permissions.Prefixes.Scope + OpenIddictConstants.Scopes.Email,
-                OpenIddictConstants.Permissions.Prefixes.Scope + OpenIddictConstants.Scopes.Roles,
-                OpenIddictConstants.Permissions.Prefixes.Scope + OpenIddictConstants.Scopes.OfflineAccess
-            },
-            Requirements =
-            {
-                OpenIddictConstants.Requirements.Features.ProofKeyForCodeExchange
-            }
-        });
+            OpenIddictConstants.Permissions.Endpoints.Authorization,
+            OpenIddictConstants.Permissions.Endpoints.EndSession,
+            OpenIddictConstants.Permissions.Endpoints.Token,
+            OpenIddictConstants.Permissions.GrantTypes.AuthorizationCode,
+            OpenIddictConstants.Permissions.GrantTypes.RefreshToken,
+            OpenIddictConstants.Permissions.ResponseTypes.Code,
+            OpenIddictConstants.Permissions.Prefixes.Scope + OpenIddictConstants.Scopes.OpenId,
+            OpenIddictConstants.Permissions.Prefixes.Scope + OpenIddictConstants.Scopes.Profile,
+            OpenIddictConstants.Permissions.Prefixes.Scope + OpenIddictConstants.Scopes.Email,
+            OpenIddictConstants.Permissions.Prefixes.Scope + OpenIddictConstants.Scopes.Roles,
+            OpenIddictConstants.Permissions.Prefixes.Scope + OpenIddictConstants.Scopes.OfflineAccess
+        },
+        Requirements =
+        {
+            OpenIddictConstants.Requirements.Features.ProofKeyForCodeExchange
+        }
+    };
+
+    var spaLifNotFoundException = await applications.FindByClientIdAsync(settings.SpaClientId);
+    if (spaLifNotFoundException is null)
+    {
+        await applications.CreateAsync(spaDescriptor);
+    }
+    else
+    {
+        await applications.UpdateAsync(spaLifNotFoundException, spaDescriptor);
     }
     
     // cli Password + Refresh Token
