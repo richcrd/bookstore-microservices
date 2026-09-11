@@ -38,6 +38,15 @@ public class AuthorizationController(AuthorizationService authService) : Control
             : SignIn(principal, OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
     }
 
+    [HttpGet("~/connect/logout")]
+    [HttpPost("~/connect/logout")]
+    public async Task<IActionResult> Logout()
+    {
+        var request = GetRequest();
+        await HttpContext.SignOutAsync(OpenIddictServerAspNetCoreDefaults.AuthenticationScheme);
+        return Redirect(request.PostLogoutRedirectUri ?? "/");
+    }
+
     [HttpPost("~/connect/token"), Produces("application/json")]
     public async Task<ActionResult> Exchange()
     {
