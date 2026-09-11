@@ -26,7 +26,7 @@ Adoptar **OpenIddict 7** dentro de `Auth.API` como **proveedor OpenID Connect**:
   - `cli` (cliente **confidencial**): **password grant** y refresh (scripts/E2E).
 - **Persistencia** de aplicaciones, scopes y autorizaciones en una nueva BD `auth_db` (OpenIddict + EF Core), sembrada al arrancar.
 - **Validación por discovery (RS256)** en Catalog/Orders/Inventory vía `OpenIddict.Validation` (`AddIdpAuthentication` en `SharedKernel`): cada servicio descarga el documento de discovery del issuer y valida `iss`, firma y claves. Eliminada la clave de firma compartida de la configuración.
-- **Gateway YARP** expone `/connect/{**catch-all}` y `/.well-known/{**catch-all}` hacia `Auth.API`, de modo que el **issuer público** sea la URL del gateway (en dev `http://localhost:5100` directo; en prod `BOOKSTORE_PUBLIC_ISSUER`), único puerto expuesto.
+- **Gateway YARP** expone `/connect/{**catch-all}` y `/.well-known/{**catch-all}` hacia `Auth.API`, de modo que el issuer sea la URL del gateway (en dev `http://localhost:5100` directo; en prod la dirección interna `http://auth:5100`, resoluble por los servicios dentro de la red Docker; `BOOKSTORE_PUBLIC_ISSUER` lo sobreescribe para exposiciones tras dominio real), único puerto expuesto.
 - **Tests de integración** migrados a un **esquema de autenticación de test** (`TestAuthHandler`): la suite no depende de la firma real ni de un IdP en marcha.
 
 Se eligió **OpenIddict frente a IdentityServer**: IdentityServer 4 requirió licenciamiento desde v5 y no encaja con la filosofía MIT del proyecto; OpenIddict es libre, activo y se integra con EF Core y ASP.NET Core de forma directa.

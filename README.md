@@ -137,7 +137,7 @@ flowchart TB
 | `ConnectionStrings__OrderSagaDb` | `Host=localhost;Database=order_saga_db;...` | BD de la saga |
 | `RabbitMQ__Host` | `rabbitmq://localhost` | Broker de mensajería (en prod `rabbitmq://rabbitmq`) |
 | `CatalogApi__BaseAddress` | `http://localhost:5038` | HTTP a Catalog usado por Orders |
-| `OpenIddict__Issuer` | `http://localhost:5100` | Issuer público del proveedor OIDC; los servicios lo usan para descubrir claves y validar el `iss` (en prod = URL pública del gateway, env `BOOKSTORE_PUBLIC_ISSUER`) |
+| `OpenIddict__Issuer` | `http://localhost:5100` | Issuer público del proveedor OIDC; los servicios lo usan para descubrir claves y validar el `iss` (en prod default `http://auth:5100` resoluble en la red interna; para dominios reales sobreescribe con `BOOKSTORE_PUBLIC_ISSUER`) |
 | `OpenIddict__SpaClientId`/`SpaRedirectUri` | `web-spa` / `http://localhost:5173/callback` | Cliente público SPA (Authorization Code + PKCE) sembrado al arrancar |
 | `OpenIddict__CliClientId`/`CliClientSecret` | `cli` / `cli-dev-secret` | Cliente confidencial para la CLI (*password*/*refresh* grant) |
 | `OpenTelemetry__Endpoint` | `http://localhost:4317` | Endpoint OTLP (Jaeger) |

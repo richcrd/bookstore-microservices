@@ -74,7 +74,7 @@ Rutas definidas en `src/ApiGateway/appsettings.json`:
 | `/connect/{**catch-all}` | `auth` → `auth-1` | `http://auth:5100/` |
 | `/.well-known/{**catch-all}` | `auth` | ídem |
 
-Los endpoints **OIDC** (`/connect/*`, `/.well-known/*`) se exponen por el gateway para que clientes y validadores resuelvan *discovery* y emisión de tokens contra la **URL pública** (en prod, el issuer `OpenIddict__Issuer` = `BOOKSTORE_PUBLIC_ISSUER`, default `http://localhost`).
+Los endpoints **OIDC** (`/connect/*`, `/.well-known/*`) se exponen por el gateway para que clientes y validadores resuelvan *discovery* y emisión de tokens. El issuer (`OpenIddict__Issuer`) por defecto en prod es la dirección interna `http://auth:5100` (resoluble en la red Docker); para exposiciones tras un dominio real, define `BOOKSTORE_PUBLIC_ISSUER=https://tudominio.com` (todos los servicios y auth apuntarán al mismo issuer).
 
 En el stack de producción las direcciones se inyectan por entorno (`ReverseProxy__Clusters__*__Destinations__*__Address`), porque dentro del *overlay network* de Docker los contenedores se resuelven por **nombre de servicio**, no por `localhost`.
 
@@ -205,7 +205,7 @@ Garantiza que reintentos de red por timeout no dupliquen pedidos ni reservas.
 | `order_saga_db` | OrderSaga.Worker | 1 migración (saga state + inbox) |
 | `auth_db` | Auth.API | 1 migración (apps/scopes/autorizaciones OpenIddict) |
 
-- Cada Base aplica **`db.Database.Migrate()` al arrancar** (migraciones automáticas); el script `docker/postgres/init/001-create-databases.sql` crea las 5 bases en entornos limpios.
+- Los servicios con base de datos aplican **`db.Database.Migrate()` al arrancar** (migraciones automáticas); el script `docker/postgres/init/001-create-databases.sql` crea las 5 bases en entornos limpios.
 - El dominio de inventario modela `QuantityOnHand`, `ReservedQuantity` y `Available`.
 
 ## 14. Observabilidad
@@ -219,7 +219,7 @@ Garantiza que reintentos de red por timeout no dupliquen pedidos ni reservas.
 Dos modos de ejecución equivalentes (no duplicados):
 
 - **Dev** (iteración): 6 procesos `dotnet run` en puertos dedicados + contenedores de infraestructura (`bookstore-postgres`, `bookstore-rabbitmq`, y opcional observabilidad por `docker-compose.observability.yml`).
-- **Prod** (`docker/docker-compose.prod.yml`): 9 contenedores con Postgres/RabbitMQ propios en red interna; **único puerto público `:80`** (gateway). Los destinos YARP se inyectan por variables de entorno; el issuer OIDC público viene de `BOOKSTORE_PUBLIC_ISSUER` (default `http://localhost`).
+- **Prod** (`docker/docker-compose.prod.yml`): 9 contenedores con Postgres/RabbitMQ propios en red interna; **único puerto público `:80`** (gateway). Los destinos YARP se inyectan por variables de entorno; el issuer OIDC (`OpenIddict__Issuer`) por defecto es la dirección interna `http://auth:5100`, resoluble por los servicios dentro de la red Docker; `BOOKSTORE_PUBLIC_ISSUER` lo sobreescribe para exposiciones tras dominio real.
 
 **CI/CD** (`../../.github/workflows/`):
 - `ci.yml`: en cada push/PR a `main` → `dotnet restore` + `build` + `test` (unit + integración con Testcontainers).

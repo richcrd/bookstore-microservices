@@ -34,7 +34,7 @@ services:
     environment:
       ASPNETCORE_URLS: http://+:5038
       ConnectionStrings__CatalogDb: Host=postgres;Port=5432;Database=catalog_db;Username=postgres;Password=postgres
-      OpenIddict__Issuer: ${BOOKSTORE_PUBLIC_ISSUER:-http://localhost}
+      OpenIddict__Issuer: ${BOOKSTORE_PUBLIC_ISSUER:-http://auth:5100}
       OpenTelemetry__Endpoint: http://host.docker.internal:4317
 
   orders:
@@ -51,7 +51,7 @@ services:
       ConnectionStrings__OrdersDb: Host=postgres;Port=5432;Database=orders_db;Username=postgres;Password=postgres
       RabbitMQ__Host: rabbitmq://rabbitmq
       CatalogApi__BaseAddress: http://catalog:5038
-      OpenIddict__Issuer: ${BOOKSTORE_PUBLIC_ISSUER:-http://localhost}
+      OpenIddict__Issuer: ${BOOKSTORE_PUBLIC_ISSUER:-http://auth:5100}
       OpenTelemetry__Endpoint: http://host.docker.internal:4317
 
   inventory:
@@ -67,7 +67,7 @@ services:
       ASPNETCORE_URLS: http://+:5208
       ConnectionStrings__InventoryDb: Host=postgres;Port=5432;Database=inventory_db;Username=postgres;Password=postgres
       RabbitMQ__Host: rabbitmq://rabbitmq
-      OpenIddict__Issuer: ${BOOKSTORE_PUBLIC_ISSUER:-http://localhost}
+      OpenIddict__Issuer: ${BOOKSTORE_PUBLIC_ISSUER:-http://auth:5100}
       OpenTelemetry__Endpoint: http://host.docker.internal:4317
 
   auth:
@@ -80,7 +80,7 @@ services:
     environment:
       ASPNETCORE_URLS: http://+:5100
       ConnectionStrings__AuthDb: Host=postgres;Port=5432;Database=auth_db;Username=postgres;Password=postgres
-      OpenIddict__Issuer: ${BOOKSTORE_PUBLIC_ISSUER:-http://localhost}
+      OpenIddict__Issuer: ${BOOKSTORE_PUBLIC_ISSUER:-http://auth:5100}
       OpenIddict__DisableTransportSecurityRequirement: "true"
       OpenTelemetry__Endpoint: http://host.docker.internal:4317
 

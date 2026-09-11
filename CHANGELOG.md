@@ -26,7 +26,7 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y el p
 - Destinos del gateway configurables por entorno: `${ReverseProxy__Clusters__*__Destinations__*__Address}` para que los contenedores del stack de prod enruten por nombre de servicio y no por `localhost`.
 - Los servicios con base de datos aplican `Migrate()` al arrancar en lugar de depender de dumps de BD.
 - El token se obtiene ahora por OIDC a través del gateway (`POST /connect/token`, password grant) en lugar de `POST /api/v1/auth/token`.
-- El issuer público del proveedor es configurable (`OpenIddict__Issuer`; en prod `BOOKSTORE_PUBLIC_ISSUER`, default `http://localhost`).
+- El issuer público del proveedor es configurable (`OpenIddict__Issuer`; en prod default interno `http://auth:5100`; `BOOKSTORE_PUBLIC_ISSUER` lo sobreescribe para dominios reales).
 - Auth.API pasa a usar su propia base `auth_db` (aplicaciones/scopes/autorizaciones OpenIddict); el compose de prod la conecta y añade `depends_on: postgres`.
 
 ### Fixed
