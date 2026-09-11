@@ -77,6 +77,14 @@ flowchart TB
 
 **Flujo típico**: el cliente obtiene un token con su flujo OIDC (Authorization Code + PKCE desde el SPA o *password grant* desde la CLI) → crea un pedido (Orders valida contra Catalog con el snapshot de precio) → el evento viaja por el outbox a RabbitMQ → la saga coordina pago (simulado) → Inventory reserva y descuenta stock → el pedido pasa a `Shipped`.
 
+### Frontend (SPA)
+
+La interfaz web (React) **vive fuera del monorepo** (carpeta local del autor `~/Desktop/BookStoreWeb`) y se conecta al backend **solo a través del gateway**:
+
+- **Arranque**: `npm run dev` en `http://localhost:5173`; el gateway habilita CORS para ese origen (política `Frontend`).
+- **Login**: `customer/customer123` (rol `customer`) o `admin/admin123` (rol `admin`), con el flujo OIDC de Authorization Code + PKCE (cliente `web-spa`) contra `http://localhost:5080`.
+- **API**: todas las llamadas pasan por el gateway `http://localhost:5080` (`/api/v1/*` y endpoints OIDC `/connect/*`, `/.well-known/*`).
+
 ## Requisitos previos
 
 - [.NET SDK 10](https://dotnet.microsoft.com/download)
@@ -137,7 +145,7 @@ flowchart TB
 | `ConnectionStrings__OrderSagaDb` | `Host=localhost;Database=order_saga_db;...` | BD de la saga |
 | `RabbitMQ__Host` | `rabbitmq://localhost` | Broker de mensajería (en prod `rabbitmq://rabbitmq`) |
 | `CatalogApi__BaseAddress` | `http://localhost:5038` | HTTP a Catalog usado por Orders |
-| `OpenIddict__Issuer` | `http://localhost:5100` | Issuer público del proveedor OIDC; los servicios lo usan para descubrir claves y validar el `iss` (en prod default `http://auth:5100` resoluble en la red interna; para dominios reales sobreescribe con `BOOKSTORE_PUBLIC_ISSUER`) |
+| `OpenIddict__Issuer` | `http://localhost:5080` | Issuer público del proveedor OIDC; los servicios lo usan para descubrir claves y validar el `iss` (en dev es el Host del gateway; en prod default `http://auth:5100` resoluble en la red interna; para dominios reales sobreescribe con `BOOKSTORE_PUBLIC_ISSUER`) |
 | `OpenIddict__SpaClientId`/`SpaRedirectUri` | `web-spa` / `http://localhost:5173/callback` | Cliente público SPA (Authorization Code + PKCE) sembrado al arrancar |
 | `OpenIddict__CliClientId`/`CliClientSecret` | `cli` / `cli-dev-secret` | Cliente confidencial para la CLI (*password*/*refresh* grant) |
 | `OpenTelemetry__Endpoint` | `http://localhost:4317` | Endpoint OTLP (Jaeger) |

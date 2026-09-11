@@ -74,7 +74,9 @@ Rutas definidas en `src/ApiGateway/appsettings.json`:
 | `/connect/{**catch-all}` | `auth` → `auth-1` | `http://auth:5100/` |
 | `/.well-known/{**catch-all}` | `auth` | ídem |
 
-Los endpoints **OIDC** (`/connect/*`, `/.well-known/*`) se exponen por el gateway para que clientes y validadores resuelvan *discovery* y emisión de tokens. El issuer (`OpenIddict__Issuer`) por defecto en prod es la dirección interna `http://auth:5100` (resoluble en la red Docker); para exposiciones tras un dominio real, define `BOOKSTORE_PUBLIC_ISSUER=https://tudominio.com` (todos los servicios y auth apuntarán al mismo issuer).
+Los endpoints **OIDC** (`/connect/*`, `/.well-known/*`) se exponen por el gateway para que clientes y validadores resuelvan *discovery* y emisión de tokens. El issuer (`OpenIddict__Issuer`) por defecto en prod es la dirección interna `http://auth:5100` (resoluble en la red Docker); para exposiciones tras un dominio real, define `BOOKSTORE_PUBLIC_ISSUER=https://tudominio.com` (todos los servicios y auth apuntarán al mismo issuer). En dev el issuer es `http://localhost:5080` (el Host público del gateway).
+
+Las rutas OIDC (`/connect/{**catch-all}`, `/.well-known/{**catch-all}`) llevan el transform **`RequestHeaderOriginalHost: true`**: YARP reenvía a Auth conservando el Host original de la petición (en dev `localhost:5080`), de modo que los endpoints **relativos** de OIDC y el documento de *discovery* se resuelven contra el Host público del gateway y no contra el destino interno. El gateway define además la política CORS **`Frontend`** (`AllowedOrigins=["http://localhost:5173"]`, `AllowAnyHeader`/`AllowAnyMethod`) para que el SPA React pueda consumirlo desde su origen de desarrollo.
 
 En el stack de producción las direcciones se inyectan por entorno (`ReverseProxy__Clusters__*__Destinations__*__Address`), porque dentro del *overlay network* de Docker los contenedores se resuelven por **nombre de servicio**, no por `localhost`.
 
@@ -185,13 +187,14 @@ Garantiza que reintentos de red por timeout no dupliquen pedidos ni reservas.
 ## 12. Seguridad y autenticación
 
 - **OpenID Connect / OAuth 2.0** con **OpenIddict 7**: `Auth.API` es el **proveedor de identidad** (issuer `OpenIddict__Issuer`). Clientes sembrados al arranque:
-  - `web-spa` (público): **Authorization Code + PKCE** + refresh para el frontend.
+  - `web-spa` (público): **Authorization Code + PKCE** + refresh para el frontend; `post_logout_redirect_uri` registrado (`http://localhost:5173/`).
   - `cli` (confidencial, `CliClientSecret`): **password grant** + refresh para la CLI/scripts.
   - Tokens RS256 (firmados con certificado de desarrollo; HTTPS + certificado real pendiente en prod), vida 30 min, refresh 14 días.
+  - **Cierre de sesión**: `GET/POST /connect/logout` (`AuthorizationController.Logout()`) ejecuta `SignOutAsync` sobre el esquema de OpenIddict y redirige a `post_logout_redirect_uri` (o `/`).
 - **Validación por *discovery***: Catalog/Orders/Inventory usan `OpenIddict.Validation` → descargan el documento de discovery del issuer y validan `iss`/firma/claves (sin firma compartida hardcodeada).
 - **Roles**: `admin`/`customer` viajan en el claim `role` y las políticas de autorización usan `RequireClaim("role", ...)` (`AdminOnly` para inventario y otras operaciones protegidas).
 - **Secrets**: claves y contraseñas de producción nunca en `appsettings.json` (ver SECURITY/CONTRIBUTING); catálogo no requiere token para lectura.
-- El reverse-proxy expone `/api/v1/*`, `/connect/*` y `/.well-known/*`; el resto no es accesible desde el exterior.
+- El reverse-proxy expone `/api/v1/*`, `/connect/*` y `/.well-known/*`; el resto no es accesible desde el exterior. El **SPA React** (fuera del monorepo) consume la *discovery* y estos endpoints contra el Host público del gateway (`:5080`).
 
 ## 13. Persistencia
 
@@ -245,7 +248,8 @@ flowchart LR
 - **Payment-gateway simulado** (éxito si `Total < 10.000`): sustituible por un proveedor real sin cambiar la saga (mismo contrato `RequestPaymentCommand`/`PaymentCompleted`).
 - **Certificados de desarrollo en OpenIddict** (`AddDevelopmentEncryptionCertificate`): en un despliegue real hay que proveer certificados de firma/cifrado persistentes y expirar a HTTPS.
 - **Catálogo sin mensajería** de momento.
-- Pendientes: máis ADR de decisiones clave en `docs/adr/`, contratos versionados y *contract testing*, y frontend (React/Vue/Blazor) consumiendo el gateway por Authorization Code + PKCE.
+- Pendientes: más ADR de decisiones clave en `docs/adr/`, contratos versionados y *contract testing*.
+- El **frontend SPA** (React, fuera del monorepo) ya consume el gateway por Authorization Code + PKCE; la evolución pendiente (búsqueda avanzada, carrito persistente, paginación de la UI, tests del SPA y hosting) se trackea en la Fase 16.
 
 ## 17. Decisiones de arquitectura (ADR)
 

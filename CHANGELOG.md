@@ -20,6 +20,9 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y el p
 - **Docker de producción** multi-stage (`docker/docker-compose.prod.yml`, 9 contenedores, gateway en `:80`).
 - **CI/CD** en GitHub Actions: `ci.yml` (build + test en cada push) y `cd.yml` (deploy por tags `v*`).
 - Suite de **92 tests** (unit + integración con Testcontainers).
+- **Frontend SPA** (fuera del monorepo, `~/Desktop/BookStoreWeb`): React 19 + Vite 8 + TypeScript 6, react-router 7, TanStack Query 5, axios, zod 4 y oidc-client-ts 3; consume el backend por el gateway (`:5080`) con Authorization Code + PKCE (cliente `web-spa`), login HTML en `/connect/authorize`, callback en `/callback`, renovación silenciosa (`automaticSilentRenew`) y logout con `signoutRedirect`.
+- **Auth.API**: endpoint de logout `GET/POST /connect/logout` (`AuthorizationController.Logout()`): cierra la sesión de OpenIddict (`SignOutAsync`) y redirige a `post_logout_redirect_uri` (registrado `http://localhost:5173/` para el SPA) o `/`.
+- **ApiGateway**: política CORS `Frontend` con `AllowedOrigins=["http://localhost:5173"]` y transform `RequestHeaderOriginalHost: true` en las rutas OIDC (`/connect/{**catch-all}`, `/.well-known/{**catch-all}`) para preservar el Host público `:5080` hacia Auth.
 
 ### Changed
 

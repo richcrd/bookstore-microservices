@@ -23,8 +23,9 @@
 | 12. Estabilización CI | Pipeline reproducible | CI verde en GitHub | ✔ |
 | 13. Documentación | Repo enterprise (README, CONTRIBUTING, etc.) | Docs enlazadas | ✔ |
 | 14. Seguridad OIDC | Proveedor OpenID Connect + validación por discovery | Login OIDC + 401/403 + suite verde | ✔ |
+| 15. Frontend SPA | Frontend SPA (React + OIDC) | Login + pedido end-to-end vía gateway; build/tsc OK | ✔ |
 
-**Estado final**: 92 tests en verde · CI/CD operativo · stack prod validado.
+**Estado final**: 92 tests en verde · CI/CD operativo · stack prod validado · frontend SPA (React + OIDC) validado end-to-end contra el gateway.
 
 ---
 
@@ -238,3 +239,23 @@ OrderCreated → AwaitingPayment → (PaymentApproved) → ShipmentRequested →
 - **El SPA aún no existe**: el cliente `web-spa` está sembrado y listo (PKCE) para el frontend futuro.
 
 **Verificación**: flujo Authorization Code + PKCE completo validado (login HTML → `code` → `access_token`); password grant por `cli` desde el gateway; discovery pública en `/.well-known/openid-configuration`; checkpoint sin token → **401**, admin → **201**, customer → **403**; suite **92/92** en verde.
+
+---
+
+## Fase 15 — Frontend SPA (React + OpenID Connect)
+
+**Qué se añadió**: el **SPA de la librería**, que **vive fuera del monorepo** (carpeta local del autor `~/Desktop/BookStoreWeb`): este repositorio contiene solo el backend y el gateway; el frontend no forma parte del repo y consume todo a través de él.
+
+- **Stack**: React 19, Vite 8, TypeScript 6, react-router 7, TanStack Query 5, axios, zod 4 y oidc-client-ts 3.
+- **Arquitectura por capas** en `src/`: `app/` (main, router de rutas, providers, config), `domain/` (models + ports), `application/` (hooks React Query + AuthProvider), `infrastructure/` (httpClient axios con interceptor Bearer/401, oidc.ts, schemas zod, DI), `presentation/` (pages/components/guards/layout) y `shared/` (constantes, `formatMoney` y `customerId` determinista derivado de `sub`).
+- **Flujo OIDC**: Authorization Code + **PKCE** con el cliente público `web-spa`; login HTML custom en `/connect/authorize`; captura del callback en `/callback`; renovación silenciosa (`automaticSilentRenew`, `silent_redirect_uri = /callback`); logout con `signoutRedirect` a `/connect/logout` con `post_logout_redirect_uri=http://localhost:5173/`.
+- **Pantallas**: Inicio/catálogo (consume `GET /api/v1/books`), Nuevo pedido (cantidades por libro; header `Idempotency-Key` GUID; cliente derivado de `sub`), Mis pedidos (`GET /api/v1/orders`) y Stock (admin, `GET /api/v1/stock-items` y `POST` add).
+- **Backend acompañante** (ya commiteado en este repo):
+  - **Auth.API**: los endpoints OIDC (`connect/authorize`, `connect/token`, `connect/logout`) usan rutas **relativas** para que la *discovery* respete el Host de la petición; nuevo `Logout()` en `Controllers/AuthorizationController.cs` (GET/POST `~/connect/logout` → `SignOutAsync(OpenIddictServerAspNetCoreDefaults)` + redirect a `post_logout_redirect_uri` o `/`).
+  - **ApiGateway**: rutas `/connect/{**catch-all}` y `/.well-known/{**catch-all}` con transform `RequestHeaderOriginalHost: true` (preserva el Host original `:5080` hacia Auth); política CORS `"Frontend"` con `AllowedOrigins=["http://localhost:5173"]`.
+  - Issuer dev de Auth en `http://localhost:5080/` (los 4 servicios validan por discovery contra ese issuer).
+  - Cliente `web-spa` (público, PKCE) sembrado en `auth_db` al arrancar, con `post_logout_redirect_uri` registrado.
+
+**Qué no se añadió y por qué** (pasa a la **Fase 16**): búsqueda avanzada en el catálogo, carrito persistente (localStorage), paginación de la UI, tests del frontend y hosting del SPA. El SPA se mantiene fuera del monorepo por alcance (el repo sigue siendo el backend de referencia) y su despliegue queda desacoplado del stack Docker de producción.
+
+**Verificación**: `tsc --noEmit` limpio y `vite build` OK; flujo completo validado a mano (login customer/admin, creación de pedido → saga → `Shipped`, logout con 302).
