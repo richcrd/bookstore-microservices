@@ -4,3 +4,4 @@ CREATE DATABASE catalog_db;
 CREATE DATABASE orders_db;
 CREATE DATABASE inventory_db;
 CREATE DATABASE order_saga_db;
+CREATE DATABASE auth_db;

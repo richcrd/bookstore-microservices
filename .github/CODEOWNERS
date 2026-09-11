@@ -1,0 +1,36 @@
+# CODEOWNERS — propiedad de código por servicio
+# Un archivo por línea: <patrón> <@usuario o @org/team>
+# Reemplaza los placeholders por los handles reales (usuarios o teams de tu organización).
+# Quien no esté listado aquí y toque una ruta OWNED: su PR exigirá review del dueño sí o sí.
+
+# Raíz y meta (arquitectura / repositorio) — nadie toca esto sin su review
+# -----------------------------------------------------------------------------
+*                                   @ARCHITECT_HANDLE
+/.github/**                         @ARCHITECT_HANDLE
+/docker/**                          @ARCHITECT_HANDLE
+/docs/**                            @ARCHITECT_HANDLE
+/README.md                          @ARCHITECT_HANDLE
+/CONTRIBUTING.md                    @ARCHITECT_HANDLE
+
+# Contrato compartido: SharedKernel (mensajes, JWT, telemetría) — punto crítico
+# -----------------------------------------------------------------------------
+/src/BuildingBlocks/**              @ARCHITECT_HANDLE
+
+# Gateway (única entrada, rutas YARP)
+/src/ApiGateway/**                  @ARCHITECT_HANDLE
+
+# Servicios — cada persona/team es dueña de SU servicio
+# -----------------------------------------------------------------------------
+/src/Services/Auth/Auth.API/**      @CATALOG_HANDLE   @AUTH_HANDLE
+/src/Services/Catalog/**            @CATALOG_HANDLE
+/src/Services/Orders/**             @ORDERS_HANDLE
+/src/Services/Inventory/**          @INVENTORY_HANDLE
+/src/Services/OrderSaga/**          @SAGA_HANDLE      @ORDERS_HANDLE
+
+# Tests por servicio (mismos dueños que su servicio)
+# -----------------------------------------------------------------------------
+/tests/Auth*/**                     @AUTH_HANDLE
+/tests/Catalog*/**                  @CATALOG_HANDLE
+/tests/Orders*/**                   @ORDERS_HANDLE
+/tests/Inventory*/**                @INVENTORY_HANDLE
+/tests/OrderSaga*/**                @SAGA_HANDLE

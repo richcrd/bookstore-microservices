@@ -1,8 +1,7 @@
-using System.Security.Claims;
-using System.Text;
-using Microsoft.IdentityModel.JsonWebTokens;
-using Microsoft.IdentityModel.Tokens;
-using SharedKernel.Security;
+using Auth.API.Configuration;
+using Auth.API.Data;
+using Microsoft.EntityFrameworkCore;
+using OpenIddict.Abstractions;
 using SharedKernel.Telemetry;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -10,67 +9,99 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddProblemDetails();
 builder.Services.AddHealthChecks();
 builder.Services.AddServiceTelemetry(builder.Configuration, "Auth.API");
+builder.Services.AddAuthServices(builder.Configuration);
 
 var app = builder.Build();
 
 app.UseServiceTelemetry();
 
-app.MapPost("/api/v1/auth/token", (LoginRequest request) => TokenHandler.Issue(app.Configuration, request));
-
+app.MapControllers();
 app.MapHealthChecks("/health");
 
-app.Run();
-
-public static class TokenHandler
+await using (var scope = app.Services.CreateAsyncScope())
 {
-    public static IResult Issue(IConfiguration configuration, LoginRequest request)
+    var db = scope.ServiceProvider.GetRequiredService<AuthDbContext>();
+    await db.Database.MigrateAsync();
+    
+    var settings = scope.ServiceProvider.GetRequiredService<OpenIddictSettings>();
+    var applications = scope.ServiceProvider.GetRequiredService<IOpenIddictApplicationManager>();
+    var scopes = scope.ServiceProvider.GetRequiredService<IOpenIddictScopeManager>();
+
+    string[] scopeNames =
+    [
+        OpenIddictConstants.Scopes.OpenId,
+        OpenIddictConstants.Scopes.Profile,
+        OpenIddictConstants.Scopes.Email,
+        OpenIddictConstants.Scopes.Roles,
+        OpenIddictConstants.Scopes.OfflineAccess
+    ];
+
+    foreach (var scopeName in scopeNames)
     {
-        var user = configuration.GetSection("AuthUsers:Users").Get<List<DemoUser>>()
-            ?.FirstOrDefault(u =>
-                u.Username.Equals(request.Username, StringComparison.OrdinalIgnoreCase)
-                && u.Password == request.Password);
-
-        if (user is null)
+        if (await scopes.FindByNameAsync(scopeName) is null)
         {
-            return Results.Json(new { error = "Invalid username or password." },
-                statusCode: StatusCodes.Status401Unauthorized);
+            await scopes.CreateAsync(new OpenIddictScopeDescriptor()
+            {
+                Name = scopeName,
+                DisplayName = scopeName,
+            });
         }
+    }
 
-        var jwt = new JwtOptions();
-        configuration.GetSection(JwtOptions.SectionName).Bind(jwt);
-
-        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwt.SigningKey));
-        var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
-
-        var claims = new Dictionary<string, object>
+    // web-spa Authorization Code + PKCE
+    if (await applications.FindByClientIdAsync(settings.SpaClientId) is null)
+    {
+        await applications.CreateAsync(new OpenIddictApplicationDescriptor()
         {
-            [JwtRegisteredClaimNames.Sub] = user.Username,
-            [JwtRegisteredClaimNames.Name] = user.Name,
-            ["role"] = user.Role,
-            [JwtRegisteredClaimNames.Jti] = Guid.NewGuid().ToString()
-        };
-
-        var descriptor = new SecurityTokenDescriptor
+            ClientId = settings.SpaClientId,
+            ClientType = OpenIddictConstants.ClientTypes.Public,
+            ConsentType = OpenIddictConstants.ConsentTypes.Implicit,
+            DisplayName = "BookStore SPA",
+            RedirectUris = { new Uri(settings.SpaRedirectUri) },
+            PostLogoutRedirectUris = { new Uri(settings.SpaPostLogoutRedirectUri) },
+            Permissions =
+            {
+                OpenIddictConstants.Permissions.Endpoints.Authorization,
+                OpenIddictConstants.Permissions.Endpoints.EndSession,
+                OpenIddictConstants.Permissions.Endpoints.Token,
+                OpenIddictConstants.Permissions.GrantTypes.AuthorizationCode,
+                OpenIddictConstants.Permissions.ResponseTypes.Code,
+                OpenIddictConstants.Permissions.Prefixes.Scope + OpenIddictConstants.Permissions.Scopes.Profile,
+                OpenIddictConstants.Permissions.Prefixes.Scope + OpenIddictConstants.Permissions.Scopes.Email,
+                OpenIddictConstants.Permissions.Prefixes.Scope + OpenIddictConstants.Permissions.Scopes.Roles,
+                OpenIddictConstants.Permissions.Prefixes.Scope + OpenIddictConstants.Scopes.OfflineAccess
+            },
+            Requirements =
+            {
+                OpenIddictConstants.Requirements.Features.ProofKeyForCodeExchange
+            }
+        });
+    }
+    
+    // cli Password + Refresh Token
+    if (await applications.FindByClientIdAsync(settings.CliClientId) is null)
+    {
+        await applications.CreateAsync(new OpenIddictApplicationDescriptor
         {
-            Issuer = jwt.Issuer,
-            Audience = jwt.Audience,
-            Claims = claims,
-            NotBefore = DateTime.UtcNow,
-            Expires = DateTime.UtcNow.AddMinutes(jwt.AccessTokenLifetimeMinutes),
-            SigningCredentials = credentials
-        };
-
-        var accessToken = new JsonWebTokenHandler().CreateToken(descriptor);
-
-        return Results.Ok(new TokenResponse(
-            accessToken,
-            jwt.AccessTokenLifetimeMinutes,
-            user.Username,
-            user.Name,
-            user.Role));
+            ClientId = settings.CliClientId,
+            ClientType = OpenIddictConstants.ClientTypes.Confidential,
+            ConsentType = OpenIddictConstants.ConsentTypes.Implicit,
+            DisplayName = "BookStore CLI",
+            ClientSecret = settings.CliClientSecret,
+            Permissions =
+            {
+                OpenIddictConstants.Permissions.Endpoints.Token,
+                OpenIddictConstants.Permissions.Endpoints.EndSession,
+                OpenIddictConstants.Permissions.GrantTypes.Password,
+                OpenIddictConstants.Permissions.GrantTypes.RefreshToken,
+                OpenIddictConstants.Permissions.Prefixes.Scope + OpenIddictConstants.Scopes.OpenId,
+                OpenIddictConstants.Permissions.Prefixes.Scope + OpenIddictConstants.Scopes.Profile,
+                OpenIddictConstants.Permissions.Prefixes.Scope + OpenIddictConstants.Scopes.Email,
+                OpenIddictConstants.Permissions.Prefixes.Scope + OpenIddictConstants.Scopes.Roles,
+                OpenIddictConstants.Permissions.Prefixes.Scope + OpenIddictConstants.Scopes.OfflineAccess
+            }
+        });
     }
 }
 
-public record LoginRequest(string Username, string Password);
-public record DemoUser(string Username, string Password, string Name, string Role);
-public record TokenResponse(string Token, int ExpiresIn, string Username, string DisplayName, string Role);
+app.Run();
