@@ -123,14 +123,14 @@ La interfaz web (React) **vive fuera del monorepo** (carpeta local del autor `~/
    dotnet build BookStore.slnx
    ```
 
-4. **Arrancar los servicios** (cada uno en su terminal; las migraciones EF se aplican solas al iniciar):
+4. **Arrancar los servicios** (cada uno en su terminal; las migraciones EF se aplican solas al iniciar). Es **obligatorio** `ASPNETCORE_ENVIRONMENT=Development` para que se carguen las credenciales de desarrollo (`appsettings.Development.json`): sin ella el entorno por defecto es `Production` y los placeholders `CHANGE_ME` de `appsettings.json` hacen fallar el arranque a propósito (fail-fast).
    ```bash
-   ASPNETCORE_URLS=http://localhost:5100 dotnet run --project src/Services/Auth/Auth.API
-   ASPNETCORE_URLS=http://localhost:5038 dotnet run --project src/Services/Catalog/Catalog.API
-   ASPNETCORE_URLS=http://localhost:5248 dotnet run --project src/Services/Orders/Orders.API
-   ASPNETCORE_URLS=http://localhost:5208 dotnet run --project src/Services/Inventory/Inventory.API
-   dotnet run --project src/Services/OrderSaga/OrderSaga.Worker
-   ASPNETCORE_URLS=http://localhost:5080 dotnet run --project src/ApiGateway/ApiGateway
+   ASPNETCORE_ENVIRONMENT=Development ASPNETCORE_URLS=http://localhost:5100 dotnet run --project src/Services/Auth/Auth.API
+   ASPNETCORE_ENVIRONMENT=Development ASPNETCORE_URLS=http://localhost:5038 dotnet run --project src/Services/Catalog/Catalog.API
+   ASPNETCORE_ENVIRONMENT=Development ASPNETCORE_URLS=http://localhost:5248 dotnet run --project src/Services/Orders/Orders.API
+   ASPNETCORE_ENVIRONMENT=Development ASPNETCORE_URLS=http://localhost:5208 dotnet run --project src/Services/Inventory/Inventory.API
+   ASPNETCORE_ENVIRONMENT=Development dotnet run --project src/Services/OrderSaga/OrderSaga.Worker
+   ASPNETCORE_ENVIRONMENT=Development ASPNETCORE_URLS=http://localhost:5080 dotnet run --project src/ApiGateway/ApiGateway
    ```
 
 5. **Swagger** en `http://localhost:<puerto>/swagger` por cada servicio (o por el gateway sin `/swagger`).
@@ -142,21 +142,32 @@ La interfaz web (React) **vive fuera del monorepo** (carpeta local del autor `~/
 
 ## Configuración
 
-| Variable | Default | Descripción |
+Los servicios usan la **precedencia estándar de ASP.NET Core** — variables de entorno (`Config__Clave`) > `appsettings.{Environment}.json` > `appsettings.json` > defaults de código. Los secretos siguen la **Fase 21 (patrón 12-factor)**: `appsettings.json` **no contiene credenciales** (placeholders `CHANGE_ME` con fail-fast), las credenciales de desarrollo viven en `appsettings.Development.json` y en QA/prod los secretos llegan por **variables de entorno** (`.env`/CD) sin tocar el compose. La tabla muestra los valores de *desarrollo*:
+
+| Variable | Default (desarrollo) | Descripción |
 |---|---|---|
+| `ConnectionStrings__AuthDb` | `Host=localhost;Database=auth_db;Username=postgres;Password=postgres` | BD de Auth (OpenIddict) |
 | `ConnectionStrings__CatalogDb` | `Host=localhost;Database=catalog_db;Username=postgres;Password=postgres` | BD de catálogo |
 | `ConnectionStrings__OrdersDb` | `Host=localhost;Database=orders_db;...` | BD de órdenes |
 | `ConnectionStrings__InventoryDb` | `Host=localhost;Database=inventory_db;...` | BD de stock |
 | `ConnectionStrings__OrderSagaDb` | `Host=localhost;Database=order_saga_db;...` | BD de la saga |
-| `RabbitMQ__Host` | `rabbitmq://localhost` | Broker de mensajería (en prod `rabbitmq://rabbitmq`) |
+| `RabbitMQ__Host` | `rabbitmq://localhost` | Broker de mensajería (en prod el compose inyecta `rabbitmq://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq`) |
 | `CatalogApi__BaseAddress` | `http://localhost:5038` | HTTP a Catalog usado por Orders |
 | `OpenIddict__Issuer` | `http://localhost:5080` | Issuer público del proveedor OIDC; **los servicios y el gateway** lo usan para descubrir claves y validar el `iss` (en dev es el Host del gateway; en prod default `http://auth:5100` resoluble en la red interna; para dominios reales sobreescribe con `BOOKSTORE_PUBLIC_ISSUER`) |
 | `OpenIddict__SpaClientId`/`SpaRedirectUri` | `web-spa` / `http://localhost:5173/callback` | Cliente público SPA (Authorization Code + PKCE) sembrado al arrancar |
-| `OpenIddict__CliClientId`/`CliClientSecret` | `cli` / `cli-dev-secret` | Cliente confidencial para la CLI (*password*/*refresh* grant) |
+| `OpenIddict__CliClientId`/`CliClientSecret` | `cli` / `cli-dev-secret` *(dev)* | Cliente confidencial para la CLI (*password*/*refresh* grant); en prod `OpenIddict__CliClientSecret` se inyecta desde `CLI_CLIENT_SECRET` |
 | `OpenTelemetry__Endpoint` | `http://localhost:4318` | Endpoint OTLP HTTP/protobuf (trazas, métricas y logs) hacia el collector; lo sobreescribe la env `OTEL_EXPORTER_OTLP_ENDPOINT` (la inyecta Aspire) |
 | `ReverseProxy__Clusters__<name>__Destinations__<dest>__Address` | `http://localhost:<puerto>` | Destinos YARP por servicio (sobrescritos en prod) |
 
-> ⚠️ Los secretos (`OpenIddict__Issuer` público, `CliClientSecret` y contraseñas de BD) deben venir de *secrets* en producción (GitHub Secrets / Docker secrets / Vault); los valores de `appsettings.json` son de **desarrollo**.
+### Secretos por entorno
+
+| Entorno | Fuente de secretos | Cómo se inyecta |
+|---|---|---|
+| **dev** (dotnet run / tests) | `appsettings.Development.json`: connection strings `Password=postgres`, usuarios demo, `CliClientSecret: cli-dev-secret` (opcional: *user-secrets* para overrides locales) | `ASPNETCORE_ENVIRONMENT=Development` — solo así se carga el archivo (el entorno por defecto es `Production`) |
+| **qa / prod (compose manual)** | `docker/.env` (plantilla versionable `docker/.env.prod.example`) | `cp docker/.env.prod.example docker/.env` y rellenar; el compose interpola `${VAR}` y **falla al arrancar si falta una variable obligatoria** (fail-fast) |
+| **qa / prod (CD)** | GitHub Secrets | `cd.yml` inyecta los 6 secretos por `env` + `envs:` del `appleboy/ssh-action`; el compose los interpola desde la sesión remota, sin `.env` en el servidor |
+
+> ⚠️ **`appsettings.json` no contiene secretos**: los placeholders `CHANGE_ME` de `ConnectionStrings.*` y `OpenIddict__CliClientSecret` son deliberados (fail-fast si el entorno no los sobreescribe) y **jamás** deben rellenarse con credenciales reales. Las credenciales demo (`admin/admin123`, `customer/customer123`) son **solo desarrollo**; en prod no hay usuarios por defecto (se inyectan opcionalmente por env `AuthUsers__Users__N__*`).
 
 ## Uso / API
 
@@ -172,7 +183,7 @@ La documentación completa de cada contrato está en el **Swagger** de cada serv
 
 Las rutas `orders` y `stock-items` exigen **token Bearer** (el gateway valida en el borde y responde **401** sin token); `books`, `categories`, `/connect/*` y `/.well-known/*` son públicas. El gateway aplica además **rate limiting** de 20 peticiones/15 s por IP (429 con `Retry-After: 15`).
 
-**Credenciales demo**: `admin/admin123` (rol `admin`) y `customer/customer123` (rol `customer`).
+**Credenciales demo (solo desarrollo)**: `admin/admin123` (rol `admin`) y `customer/customer123` (rol `customer`) se seedan desde `appsettings.Development.json`; en QA/prod **no existen usuarios por defecto** (ver [Secretos por entorno](#secretos-por-entorno)).
 
 ```bash
 # Discovery OIDC a través del gateway
@@ -223,11 +234,13 @@ dotnet test BookStore.slnx
 ## Deploy / CI-CD
 
 - **CI** (`.github/workflows/ci.yml`): en cada push/PR a `main` → `dotnet restore/build/test`. Estado: [![CI](https://github.com/richcrd/bookstore-microservices/actions/workflows/ci.yml/badge.svg)](https://github.com/richcrd/bookstore-microservices/actions/workflows/ci.yml)
-- **CD** (`.github/workflows/cd.yml`): al crear un tag `v*` → SSH al servidor → `docker compose build` + `up -d` del stack de producción; propaga `GRAFANA_ALERT_WEBHOOK_URL` al servidor para el contact point de alertas de Grafana.
+- **CD** (`.github/workflows/cd.yml`): al crear un tag `v*` → SSH al servidor → `docker compose build` + `up -d` del stack de producción; inyecta los **6 secretos de entorno** (`POSTGRES_PASSWORD`, `RABBITMQ_USER`, `RABBITMQ_PASSWORD`, `CLI_CLIENT_SECRET`, `GRAFANA_ADMIN_PASSWORD` y `GRAFANA_ALERT_WEBHOOK_URL`) por `env` + `envs:` del `appleboy/ssh-action`, de modo que el compose los interpole en la sesión remota **sin `.env` en el servidor**.
 
-Necesita secrets en el repo: `SERVER_HOST`, `SERVER_USER`, `SSH_PRIVATE_KEY`, `GRAFANA_ALERT_WEBHOOK_URL` y la variable `DEPLOY_DIR`.
+Necesita secrets en el repo: `SERVER_HOST`, `SERVER_USER`, `SSH_PRIVATE_KEY`, `POSTGRES_PASSWORD`, `RABBITMQ_USER`, `RABBITMQ_PASSWORD`, `CLI_CLIENT_SECRET`, `GRAFANA_ADMIN_PASSWORD`, `GRAFANA_ALERT_WEBHOOK_URL` y la variable `DEPLOY_DIR`.
 
 **Stack de producción** (`docker/docker-compose.prod.yml`): **13 contenedores** — Postgres + RabbitMQ propios, los 6 proyectos ejecutables (5 servicios + gateway) y **5 de observabilidad** (otel-collector, Jaeger, Seq, Prometheus y Grafana) — con el gateway publicado en **`:80`** y las UIs de observabilidad (`16686`, `5341`, `9090`, `3000`, `4317`, `4318`) publicadas **solo para inspección**; en servidores reales el firewall debe mantener únicamente `:80` abierto.
+
+Para levantar el stack **fuera del CD** (p. ej. QA local): `cp docker/.env.prod.example docker/.env`, rellena los valores obligatorios y `docker compose -f docker/docker-compose.prod.yml up -d --build`. ⚠️ **Rotar `POSTGRES_PASSWORD` en un volumen existente exige `docker compose -f docker/docker-compose.prod.yml down -v` (destruye los datos del volumen) u `ALTER USER` en la BD**: la variable `POSTGRES_PASSWORD` de Postgres solo aplica en el primer `init` del volumen.
 
 Historial completo de **fases construidas** (qué se añadió, qué no y por qué) en [docs/phases.md](docs/phases.md).
 
@@ -245,7 +258,7 @@ Los servicios emiten **trazas + métricas + logs** por OTLP **HTTP/protobuf** al
 
 El contenedor dev de RabbitMQ debe exponer el puerto `15692` (métricas Prometheus, ver comando `docker run` del Quickstart). Ejemplo de query Prometheus: `rate(http_server_request_duration_seconds_count[5m])` o filtrada por servicio con `{service_name="Orders.API"}`.
 
-**En producción** (Fase 20) la observabilidad vive dentro del propio stack (`docker-compose.prod.yml`): otel-collector, Jaeger, Seq, Prometheus y Grafana se despliegan junto a los servicios, con `prometheus.prod.yml` scrapeando por **nombre de contenedor** (`apigateway:5080`, `auth:5100`, `catalog:5038`, `orders:5248`, `inventory:5208`) + RabbitMQ (`rabbitmq:15692`, `/metrics/per-object`), y el contact point de alertas resolviéndose desde `GRAFANA_ALERT_WEBHOOK_URL` (default placeholder `http://host.docker.internal:3001/hooks/none`; el CD lo propaga como secret). Las UIs (`16686`, `5341`, `9090`, `3000`, `4317`, `4318`) se publican en el compose **solo para inspección**: el gateway sigue siendo el único puerto público `:80` y en servidores reales el firewall debe mantener solo `:80` abierto. En desarrollo se sigue usando `docker compose -f docker/docker-compose.observability.yml up -d`.
+**En producción** (Fase 20) la observabilidad vive dentro del propio stack (`docker-compose.prod.yml`): otel-collector, Jaeger, Seq, Prometheus y Grafana se despliegan junto a los servicios, con `prometheus.prod.yml` scrapeando por **nombre de contenedor** (`apigateway:5080`, `auth:5100`, `catalog:5038`, `orders:5248`, `inventory:5208`) + RabbitMQ (`rabbitmq:15692`, `/metrics/per-object`), y el contact point de alertas resolviéndose desde `GRAFANA_ALERT_WEBHOOK_URL` (default placeholder `http://host.docker.internal:3001/hooks/none`; el CD lo propaga como secret) y el admin de Grafana desde `GRAFANA_ADMIN_PASSWORD` (**obligatoria desde la Fase 21**, sin default en prod; en dev el stack observability usa `admin/admin`). Las UIs (`16686`, `5341`, `9090`, `3000`, `4317`, `4318`) se publican en el compose **solo para inspección**: el gateway sigue siendo el único puerto público `:80` y en servidores reales el firewall debe mantener solo `:80` abierto. En desarrollo se sigue usando `docker compose -f docker/docker-compose.observability.yml up -d`.
 
 ## Aspire (AppHost)
 

@@ -35,4 +35,4 @@ Al no haber releases publicados aún, se soporta únicamente la rama `main`. Cua
 
 ## Clarificación
 
-Los credenciales de desarrollo (`admin/admin123`, `customer/customer123`) y la clave JWT en `appsettings.json` son **intencionales y solo para entornos locales**. No las reutilices en producción; los entornos productivos deben usar secrets reales (ver [CONTRIBUTING.md](CONTRIBUTING.md#seguridad-y-secrets)).
+Los credenciales de desarrollo (`admin/admin123`, `customer/customer123`) son **intencionales y solo para entornos locales**: viven en `appsettings.Development.json` y solo se cargan con `ASPNETCORE_ENVIRONMENT=Development`. `appsettings.json` **no contiene secretos** (placeholders `CHANGE_ME` con fail-fast). No reutilices las credenciales demo en producción; los entornos productivos deben usar secrets reales por variables de entorno (ver [CONTRIBUTING.md](CONTRIBUTING.md#seguridad-y-secrets)).

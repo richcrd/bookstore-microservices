@@ -430,8 +430,11 @@ FodyWeavers.xsd
 *.msp
 
 # User-specific files
-appsettings.Development.json
+# (no se ignora appsettings.Development.json: las credenciales demo locales son
+#  intencionales y se commitean; los overrides personales van a `dotnet user-secrets`)
 *.DotSettings.user
+# AppHost (dashboard) mantiene su propio config de dev fuera del repo
+src/AppHost/appsettings.Development.json
 
 # AI coding assistant
 .claude/

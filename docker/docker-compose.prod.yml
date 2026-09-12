@@ -4,20 +4,23 @@ services:
   postgres:
     image: postgres:17-alpine
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: postgres
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./postgres/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
       interval: 5s
       timeout: 3s
       retries: 12
 
   rabbitmq:
     image: rabbitmq:4-management
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
     healthcheck:
       test: ["CMD-SHELL", "rabbitmq-diagnostics -q ping"]
       interval: 10s
@@ -33,7 +36,7 @@ services:
         condition: service_healthy
     environment:
       ASPNETCORE_URLS: http://+:5038
-      ConnectionStrings__CatalogDb: Host=postgres;Port=5432;Database=catalog_db;Username=postgres;Password=postgres
+      ConnectionStrings__CatalogDb: Host=postgres;Port=5432;Database=catalog_db;Username=postgres;Password=${POSTGRES_PASSWORD}
       OpenIddict__Issuer: ${BOOKSTORE_PUBLIC_ISSUER:-http://auth:5100}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
 
@@ -48,8 +51,8 @@ services:
         condition: service_healthy
     environment:
       ASPNETCORE_URLS: http://+:5248
-      ConnectionStrings__OrdersDb: Host=postgres;Port=5432;Database=orders_db;Username=postgres;Password=postgres
-      RabbitMQ__Host: rabbitmq://rabbitmq
+      ConnectionStrings__OrdersDb: Host=postgres;Port=5432;Database=orders_db;Username=postgres;Password=${POSTGRES_PASSWORD}
+      RabbitMQ__Host: "rabbitmq://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq"
       CatalogApi__BaseAddress: http://catalog:5038
       OpenIddict__Issuer: ${BOOKSTORE_PUBLIC_ISSUER:-http://auth:5100}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
@@ -65,8 +68,8 @@ services:
         condition: service_healthy
     environment:
       ASPNETCORE_URLS: http://+:5208
-      ConnectionStrings__InventoryDb: Host=postgres;Port=5432;Database=inventory_db;Username=postgres;Password=postgres
-      RabbitMQ__Host: rabbitmq://rabbitmq
+      ConnectionStrings__InventoryDb: Host=postgres;Port=5432;Database=inventory_db;Username=postgres;Password=${POSTGRES_PASSWORD}
+      RabbitMQ__Host: "rabbitmq://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq"
       OpenIddict__Issuer: ${BOOKSTORE_PUBLIC_ISSUER:-http://auth:5100}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
 
@@ -79,9 +82,10 @@ services:
         condition: service_healthy
     environment:
       ASPNETCORE_URLS: http://+:5100
-      ConnectionStrings__AuthDb: Host=postgres;Port=5432;Database=auth_db;Username=postgres;Password=postgres
+      ConnectionStrings__AuthDb: Host=postgres;Port=5432;Database=auth_db;Username=postgres;Password=${POSTGRES_PASSWORD}
       OpenIddict__Issuer: ${BOOKSTORE_PUBLIC_ISSUER:-http://auth:5100}
       OpenIddict__DisableTransportSecurityRequirement: "true"
+      OpenIddict__CliClientSecret: ${CLI_CLIENT_SECRET}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
 
   sagaworker:
@@ -94,8 +98,8 @@ services:
       rabbitmq:
         condition: service_healthy
     environment:
-      ConnectionStrings__OrderSagaDb: Host=postgres;Port=5432;Database=order_saga_db;Username=postgres;Password=postgres
-      RabbitMQ__Host: rabbitmq://rabbitmq
+      ConnectionStrings__OrderSagaDb: Host=postgres;Port=5432;Database=order_saga_db;Username=postgres;Password=${POSTGRES_PASSWORD}
+      RabbitMQ__Host: "rabbitmq://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq"
       OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
 
   apigateway:
@@ -162,7 +166,7 @@ services:
       - "3000:3000"
     environment:
       - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
       - GRAFANA_ALERT_WEBHOOK_URL=${GRAFANA_ALERT_WEBHOOK_URL:-http://host.docker.internal:3001/hooks/none}
 
 volumes:
