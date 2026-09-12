@@ -27,8 +27,9 @@
 | 16. Frontend SPA v2 | SPA v2: búsqueda, carrito y paginación | tsc + build OK; flujo añadir → carrito → pedido validado | ✔ |
 | 17. Gateway: auth en el borde | OIDC en el edge + rate limiting testeado (deuda Fase 6) | 401 en orders/stock-items sin token; ráfaga 30 → 20 OK + 429; 94 tests | ✔ |
 | 18. Frontend SPA v3 | Seguimiento del pedido en vivo (polling) + tests del frontend | npm test 12/12; badge con estados reales; E2E Pending → Shipped por polling | ✔ |
+| 19. Observabilidad 2 + Aspire | Stack observability v2 (collector + Seq + dashboards/alertas) + .NET Aspire AppHost | Trazas en Jaeger, logs en Seq, dashboards/alertas en Grafana, AppHost levantando los 6 servicios | ✔ |
 
-**Estado final**: 94 tests en verde · CI/CD operativo · stack prod validado · gateway con auth OIDC en el borde y rate limiting testeado · frontend SPA v3 (React + OIDC) validado end-to-end contra el gateway (búsqueda, carrito persistente, paginación y seguimiento del pedido en vivo por polling), con 12 tests propios (Vitest).
+**Estado final**: 94 tests en verde · CI/CD operativo · stack prod validado · gateway con auth OIDC en el borde y rate limiting testeado · observabilidad v2 (logs en Seq, dashboards y alertas en Grafana, scrape de RabbitMQ) y orquestación opcional con .NET Aspire · frontend SPA v3 (React + OIDC) validado end-to-end contra el gateway (búsqueda, carrito persistente, paginación y seguimiento del pedido en vivo por polling), con 12 tests propios (Vitest).
 
 ---
 
@@ -320,3 +321,26 @@ OrderCreated → AwaitingPayment → (PaymentApproved) → ShipmentRequested →
 - **Sin *code-splitting* por rutas ni hosting del SPA** (arrastrado de la Fase 16): bundle único y despliegue desacoplado del stack Docker de producción.
 
 **Verificación**: `npm test` **12/12 verdes**, `tsc --noEmit` limpio y `npm run build` OK en el SPA; E2E real vía gateway: pedido creado en `Pending` y observado pasar a `Shipped` por polling de `GET /api/v1/orders/{id}`; el SPA sirve `/` y `/orders/:id` en dev. Suite de backend del repo intacta (94 tests).
+
+---
+
+## Fase 19 — Observabilidad 2: dashboards + alertas + logs (Seq) + .NET Aspire
+
+**Qué se añadió**:
+
+- **Telemetría SharedKernel** (`src/BuildingBlocks/SharedKernel/Telemetry/TelemetryExtensions.cs`): `AddServiceTelemetry` exporta ahora **trazas + métricas + logs** por OTLP **HTTP/protobuf** (protocolo explícito). El endpoint se resuelve: env `OTEL_EXPORTER_OTLP_ENDPOINT` (la inyecta Aspire) > config `OpenTelemetry:Endpoint` > default `http://localhost:4318` (collector). El worker `OrderSaga.Worker/Program.cs` replica el patrón inline, incluyendo logs OTLP (`WithLogging`). Paquetes OpenTelemetry actualizados **1.12.0 → 1.18.0** en `SharedKernel.csproj` (fix de la vulnerabilidad **NU1902**; `OpenTelemetry.Instrumentation.EntityFrameworkCore` y `OpenTelemetry.Exporter.Prometheus.AspNetCore` en `1.18.0-beta.1`).
+- **Stack observability v2** (`docker/docker-compose.observability.yml`, `docker/otel-collector.yml`, `docker/prometheus.yml`):
+  - **otel-collector** (`otel/opentelemetry-collector-contrib:0.118.0`) recibiendo OTLP en `:4317` (gRPC) / `:4318` (HTTP) — receivers con `endpoint: 0.0.0.0` explícito (en 0.118 el default liga a loopback) — y enrutando **trazas → Jaeger** y **logs → Seq** (`http://seq:80/ingest/otlp`). Los host ports `14317/14318` quedaron descartados.
+  - **Seq** (`datalust/seq:latest`): UI `:5341`, volumen de datos `seq-data` y auth deshabilitada (`SEQ_FIRSTRUN_NOAUTHENTICATION`); la imagen de Jaeger dejó de publicar `4317/4318` (Jaeger solo expone `16686`).
+  - **Grafana**: datasource Prometheus con **uid fijo `prometheus`**, provider de dashboards (`provisioning/dashboards/provider.yml`) y **2 dashboards JSON provisionados** — `BookStore · API` (uid `bookstore-api`; request rate, latencia p95, error rate 5xx, peticiones activas; template var por `instance`) y `BookStore · RabbitMQ` (uid `bookstore-rabbitmq`; ready/unacked, consumidores, publ/deliv). **Alertas provisionadas** (`provisioning/alerting/`): `rules.yml` con 3 reglas (latencia p95 > 1 s, ratio 5xx > 5 %, colas RabbitMQ > 200), `contact-points.yml` (webhook placeholder `http://host.docker.internal:3001/hooks/none`) y `policies.yml`.
+  - **Prometheus**: nuevo job `rabbitmq` scrapeando `host.docker.internal:15692` (`metrics_path /metrics/per-object`) → dashboards de colas; el contenedor dev `bookstore-rabbitmq` expone ahora el puerto **15692**.
+- **.NET Aspire AppHost** (`src/AppHost/`): proyecto `BookStore.AppHost` (SDK `Aspire.AppHost.Sdk/13.5.3`, `AspireUseCliBundle=true`) añadido a la solución; orquesta los 6 proyectos con `AddProject<Projects.*>` fijando los puertos HTTP clásicos con `WithHttpEndpoint` (gateway 5080, auth 5100, catalog 5038, orders 5248, inventory 5208, saga worker) y `WaitFor` en el gateway; inyecta envs para la infra dev existente (docker-run, **no gestiona contenedores**): `ConnectionStrings__CatalogDb/OrdersDb/InventoryDb/OrderSagaDb` → `Host=localhost;Port=5432;Database=<db>;Username=postgres;Password=postgres` y `RabbitMQ__Host` → `rabbitmq://localhost:5672`. El dashboard (`https://localhost:17017`) inyecta `OTEL_EXPORTER_OTLP_ENDPOINT` a los servicios. Requiere `dotnet new install Aspire.ProjectTemplates` (el workload `aspire` del SDK **no** está instalado porque exige sudo); es **alternativa** al flujo de 6 `dotnet run` (no ambos a la vez).
+
+**Qué no se añadió y por qué**:
+
+- **Aspire no gestiona la infraestructura**: el AppHost reutiliza los contenedores dev (`bookstore-postgres`, `bookstore-rabbitmq`) vía connection strings por entorno; no se usan recursos `AddPostgres`/`AddRabbitMQ` de Aspire para no duplicar el ciclo de vida de una infra ya cubierta por Docker.
+- **El contact point de alertas es un placeholder**: `webhook-local` apunta a `http://host.docker.internal:3001/hooks/none` (sin receptor real en `:3001`); las 3 reglas y las políticas quedan operativas y listas para conectar un canal real (Slack/Teams/PagerDuty) en producción.
+- **El stack observability v2 es solo dev**: el compose de producción no despliega collector/Seq/Grafana; los contenedores de prod mantienen `:80` como único puerto público y la observabilidad queda para el entorno de desarrollo (o un futuro stack de observabilidad independiente).
+- **Seq no sustituye a los logs de consola**: los servicios siguen logueando a stdout (capturado por Docker); Seq agrega los logs OTLP en dev para correlacionarlos con las trazas.
+
+**Verificación**: `docker compose -f docker/docker-compose.observability.yml up -d` → el collector recibe OTLP en `4317/4318`; traza end-to-end de una orden en Jaeger; logs de los servicios visibles en Seq (UI `:5341`); dashboards `BookStore · API` / `BookStore · RabbitMQ` en Grafana con datos por `instance` y de colas; alertas provisionadas visibles en `Alerting`; `dotnet run --project src/AppHost` levanta los 6 servicios con dashboard en `https://localhost:17017`; suite de backend intacta (94 tests).

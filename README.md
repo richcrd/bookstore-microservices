@@ -24,6 +24,7 @@
 - [Testing](#testing)
 - [Deploy / CI-CD](#deploy--ci-cd)
 - [Observabilidad](#observabilidad)
+- [Aspire (AppHost)](#aspire-apphost)
 - [Fases de desarrollo](docs/phases.md) · [Arquitectura de detalle](docs/architecture.md)
 - [Changelog](#changelog)
 - [Contributing](#contributing)
@@ -38,7 +39,7 @@
 - **Resiliencia**: reintentos exponenciales y circuit breaker (`Microsoft.Extensions.Http.Resilience`/Polly).
 - **Idempotencia**: header `Idempotency-Key` en `POST /orders` (retry seguro sin duplicar pedidos).
 - **Migraciones de esquema automáticas** en el arranque de cada servicio (EF Core).
-- **Observabilidad**: OpenTelemetry → Jaeger (trazas), Prometheus + Grafana (métricas `/metrics`).
+- **Observabilidad**: OpenTelemetry → collector → Jaeger (trazas) + Seq (logs); Prometheus + Grafana con dashboards y alertas provisionadas (métricas `/metrics` y scrape de RabbitMQ).
 - **Docker de producción**: multi-stage, compose con Postgres/RabbitMQ propios y solo `:80` expuesto.
 - **CI/CD**: GitHub Actions (build+test en cada push) y deploy por tags `v*`.
 - **94 tests** de backend (unit + integración con Testcontainers); el **SPA** suma **12 tests propios** (Vitest + React Testing Library, fuera del monorepo).
@@ -99,8 +100,8 @@ La interfaz web (React) **vive fuera del monorepo** (carpeta local del autor `~/
 | Puerto | Uso |
 |---|---|
 | 5038 / 5248 / 5208 / 5100 / 5080 | Servicios (dev) |
-| 5432 / 5672 | Postgres / RabbitMQ |
-| 16686 / 9090 / 3000 | Jaeger / Prometheus / Grafana |
+| 5432 / 5672 / 15692 | Postgres / RabbitMQ (+ métricas Prometheus) |
+| 4317 / 4318 / 16686 / 9090 / 3000 / 5341 | Collector OTLP (gRPC / HTTP) / Jaeger / Prometheus / Grafana / Seq |
 
 ## Quickstart (desarrollo)
 
@@ -114,7 +115,7 @@ La interfaz web (React) **vive fuera del monorepo** (carpeta local del autor `~/
    ```bash
    docker run -d --name bookstore-postgres \
      -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -p 5432:5432 postgres:17-alpine
-   docker run -d --name bookstore-rabbitmq -p 5672:5672 -p 15672:15672 rabbitmq:4-management
+   docker run -d --name bookstore-rabbitmq -p 5672:5672 -p 15672:15672 -p 15692:15692 rabbitmq:4-management
    ```
 
 3. **Compilar**:
@@ -152,7 +153,7 @@ La interfaz web (React) **vive fuera del monorepo** (carpeta local del autor `~/
 | `OpenIddict__Issuer` | `http://localhost:5080` | Issuer público del proveedor OIDC; **los servicios y el gateway** lo usan para descubrir claves y validar el `iss` (en dev es el Host del gateway; en prod default `http://auth:5100` resoluble en la red interna; para dominios reales sobreescribe con `BOOKSTORE_PUBLIC_ISSUER`) |
 | `OpenIddict__SpaClientId`/`SpaRedirectUri` | `web-spa` / `http://localhost:5173/callback` | Cliente público SPA (Authorization Code + PKCE) sembrado al arrancar |
 | `OpenIddict__CliClientId`/`CliClientSecret` | `cli` / `cli-dev-secret` | Cliente confidencial para la CLI (*password*/*refresh* grant) |
-| `OpenTelemetry__Endpoint` | `http://localhost:4317` | Endpoint OTLP (Jaeger) |
+| `OpenTelemetry__Endpoint` | `http://localhost:4318` | Endpoint OTLP HTTP/protobuf (trazas, métricas y logs) hacia el collector; lo sobreescribe la env `OTEL_EXPORTER_OTLP_ENDPOINT` (la inyecta Aspire) |
 | `ReverseProxy__Clusters__<name>__Destinations__<dest>__Address` | `http://localhost:<puerto>` | Destinos YARP por servicio (sobrescritos en prod) |
 
 > ⚠️ Los secretos (`OpenIddict__Issuer` público, `CliClientSecret` y contraseñas de BD) deben venir de *secrets* en producción (GitHub Secrets / Docker secrets / Vault); los valores de `appsettings.json` son de **desarrollo**.
@@ -232,13 +233,29 @@ Historial completo de **fases construidas** (qué se añadió, qué no y por qu�
 
 ## Observabilidad
 
+Los servicios emiten **trazas + métricas + logs** por OTLP HTTP/protobuf al **collector** (`docker compose -f docker/docker-compose.observability.yml up -d`), que enruta las trazas a Jaeger y los logs a Seq. En paralelo, Prometheus scrapea `/metrics` de los servicios y el endpoint de métricas de RabbitMQ (`:15692`), y Grafana sirve dashboards y alertas provisionadas.
+
 | Herramienta | URL | Qué ver |
 |---|---|---|
+| otel-collector | `:4317` (gRPC) / `:4318` (OTLP HTTP) | Recepción de telemetría (trazas, métricas y logs) y enrutado a Jaeger/Seq. |
 | Jaeger | `http://localhost:16686` | Trazas distribuidas end-to-end (una orden completa). |
-| Prometheus | `http://localhost:9090` | Métricas `/metrics` scrapeadas cada 10s (+ `Status → Targets`). |
-| Grafana | `http://localhost:3000` (`admin/admin`) | Dashboards sobre el datasource Prometheus provisionado. |
+| Seq | `http://localhost:5341` | Logs agregados (ingest OTLP vía collector; auth deshabilitada en dev). |
+| Prometheus | `http://localhost:9090` | Métricas `/metrics` (scrape 10s) de los servicios + **RabbitMQ `:15692`** (`Status → Targets`). |
+| Grafana | `http://localhost:3000` (`admin/admin`) | Dashboards provisionados `BookStore · API` y `BookStore · RabbitMQ` + alertas (latencia p95 > 1s, ratio 5xx > 5%, colas RabbitMQ > 200). |
 
-Ejemplo de query Prometheus: `rate(http_server_request_duration_seconds_count[5m])` o filtrada por servicio con `{service_name="Orders.API"}`.
+El contenedor dev de RabbitMQ debe exponer el puerto `15692` (métricas Prometheus, ver comando `docker run` del Quickstart). Ejemplo de query Prometheus: `rate(http_server_request_duration_seconds_count[5m])` o filtrada por servicio con `{service_name="Orders.API"}`.
+
+## Aspire (AppHost)
+
+Alternativa al arranque de los 6 `dotnet run` (no a la vez): el proyecto `src/AppHost` (.NET Aspire) orquesta **todos los servicios** con sus puertos clásicos reutilizando **la infra dev existente** — los contenedores `bookstore-postgres` y `bookstore-rabbitmq` (no gestiona contenedores, solo inyecta sus connection strings por entorno):
+
+```bash
+dotnet run --project src/AppHost
+```
+
+- **Dashboard** en `https://localhost:17017` (HTTPS): recursos, logs, trazas y métricas; inyecta `OTEL_EXPORTER_OTLP_ENDPOINT` a los servicios.
+- Fija los puertos HTTP clásicos (gateway `5080`, auth `5100`, catalog `5038`, orders `5248`, inventory `5208`, saga worker) e inyecta `ConnectionStrings__CatalogDb/OrdersDb/InventoryDb/OrderSagaDb` → `Host=localhost;Port=5432;...` y `RabbitMQ__Host` → `rabbitmq://localhost:5672`.
+- Requiere la plantilla: `dotnet new install Aspire.ProjectTemplates` (el workload `aspire` del SDK no está instalado porque exige sudo).
 
 ## Changelog
 

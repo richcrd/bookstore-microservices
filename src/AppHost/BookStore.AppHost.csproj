@@ -1,0 +1,21 @@
+<Project Sdk="Aspire.AppHost.Sdk/13.5.3">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AspireUseCliBundle>true</AspireUseCliBundle>
+    <UserSecretsId>733b3673-6611-4c8c-940f-d1dd8d4ec9aa</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ApiGateway\ApiGateway.csproj" />
+    <ProjectReference Include="..\Services\Auth\Auth.API\Auth.API.csproj" />
+    <ProjectReference Include="..\Services\Catalog\Catalog.API\Catalog.API.csproj" />
+    <ProjectReference Include="..\Services\Orders\Orders.API\Orders.API.csproj" />
+    <ProjectReference Include="..\Services\Inventory\Inventory.API\Inventory.API.csproj" />
+    <ProjectReference Include="..\Services\OrderSaga\OrderSaga.Worker\OrderSaga.Worker.csproj" />
+  </ItemGroup>
+
+</Project>

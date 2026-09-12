@@ -2,6 +2,9 @@
   <Folder Name="/src/">
     <Project Path="src/ApiGateway/ApiGateway.csproj" />
   </Folder>
+  <Folder Name="/src/AppHost/">
+    <Project Path="src/AppHost/BookStore.AppHost.csproj" />
+  </Folder>
   <Folder Name="/src/BuildingBlocks/">
     <Project Path="src/BuildingBlocks/SharedKernel/SharedKernel.csproj" />
   </Folder>

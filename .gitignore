@@ -437,3 +437,10 @@ appsettings.Development.json
 .claude/
 .opencode/
 CLAUDE.md
+
+# macOS
+.DS_Store
+
+# Build outputs (AppHost/frontend)
+bin/
+obj/

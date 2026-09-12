@@ -1,0 +1,11 @@
+apiVersion: 1
+
+contactPoints:
+  - orgId: 1
+    name: webhook-local
+    receivers:
+      - uid: webhook-local
+        type: webhook
+        settings:
+          url: http://host.docker.internal:3001/hooks/none
+        disableResolveMessage: false

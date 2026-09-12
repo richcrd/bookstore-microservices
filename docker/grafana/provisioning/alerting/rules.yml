@@ -1,0 +1,126 @@
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: bookstore-http
+    folder: BookStore
+    interval: 1m
+    rules:
+      - uid: bookstore-latency-p95
+        title: "Latencia p95 > 1s"
+        condition: "B"
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            queryType: ""
+            model:
+              refId: A
+              expr: 'histogram_quantile(0.95, sum by (le) (rate(http_server_request_duration_seconds_bucket[5m])))'
+              instant: true
+              range: false
+              format: "table"
+            relativeTimeRange:
+              from: 300
+              to: 0
+          - refId: B
+            datasourceUid: "__expr__"
+            type: "threshold"
+            model:
+              refId: B
+              type: "threshold"
+              expression: "A"
+              conditions:
+                - evaluator:
+                    type: "gt"
+                    params: [1]
+                  operator:
+                    type: "and"
+              format: "table"
+        noDataState: "OK"
+        execErrState: "Error"
+        for: "2m"
+        labels:
+          severity: "warning"
+        annotations:
+          summary: "P95 de latencia supera 1s"
+
+      - uid: bookstore-errors-5xx
+        title: "Ratio de errores 5xx > 5%"
+        condition: "B"
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            queryType: ""
+            model:
+              refId: A
+              expr: 'sum(rate(http_server_request_duration_seconds_count{status_code=~"5.."}[5m])) / sum(rate(http_server_request_duration_seconds_count[5m])) * 100'
+              instant: true
+              range: false
+              format: "table"
+            relativeTimeRange:
+              from: 300
+              to: 0
+          - refId: B
+            datasourceUid: "__expr__"
+            type: "threshold"
+            model:
+              refId: B
+              type: "threshold"
+              expression: "A"
+              conditions:
+                - evaluator:
+                    type: "gt"
+                    params: [5]
+                  operator:
+                    type: "and"
+              format: "table"
+        noDataState: "OK"
+        execErrState: "Error"
+        for: "2m"
+        labels:
+          severity: "critical"
+        annotations:
+          summary: "Más del 5% de respuestas HTTP devuelven 5xx"
+
+  - orgId: 1
+    name: bookstore-rabbitmq
+    folder: BookStore
+    interval: 1m
+    rules:
+      - uid: bookstore-queue-depth
+        title: "Cola RabbitMQ con mensajes acumulados > 200"
+        condition: "B"
+        data:
+          - refId: A
+            datasourceUid: prometheus
+            queryType: ""
+            model:
+              refId: A
+              expr: 'max(rabbitmq_queue_messages_ready)'
+              instant: true
+              range: false
+              format: "table"
+            relativeTimeRange:
+              from: 300
+              to: 0
+          - refId: B
+            datasourceUid: "__expr__"
+            type: "threshold"
+            model:
+              refId: B
+              type: "threshold"
+              expression: "A"
+              conditions:
+                - evaluator:
+                    type: "gt"
+                    params: [200]
+                  operator:
+                    type: "and"
+              format: "table"
+        noDataState: "OK"
+        execErrState: "Error"
+        for: "2m"
+        labels:
+          severity: "warning"
+        annotations:
+          summary: "Colas con más de 200 mensajes pendientes de procesar"

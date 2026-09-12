@@ -10,3 +10,9 @@ scrape_configs:
           - "host.docker.internal:5038"
           - "host.docker.internal:5248"
           - "host.docker.internal:5208"
+
+  - job_name: "rabbitmq"
+    metrics_path: /metrics/per-object
+    static_configs:
+      - targets:
+          - "host.docker.internal:15692"

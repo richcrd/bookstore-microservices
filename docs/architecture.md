@@ -217,15 +217,29 @@ Garantiza que reintentos de red por timeout no dupliquen pedidos ni reservas.
 
 ## 14. Observabilidad
 
-- **Trazas**: OpenTelemetry (OTLP) `OpenTelemetry__Endpoint` (dev `http://localhost:4317`) → **Jaeger** (`:16686`).
-- **Métricas**: `/metrics` (Prometheus) scraped cada 10 s (targets de los 5 servicios dev) → **Grafana** (`:3000`, `admin/admin`, datasource provisionado).
+Los servicios exportan **trazas, métricas y logs** por OTLP **HTTP/protobuf** al **otel-collector** del stack observability (`docker/docker-compose.observability.yml`), que enruta **trazas → Jaeger** (`:16686`) y **logs → Seq** (`:5341`). En paralelo, `/metrics` (Prometheus) se scrapea cada 10 s junto con **RabbitMQ `:15692`** (`/metrics/per-object`), y **Grafana** (`:3000`, `admin/admin`) sirve dashboards y alertas provisionadas.
+
+```
+servicios ──OTLP HTTP :4318──► otel-collector :4317/:4318 ──► Jaeger :16686 (trazas)
+     │                          └───────────────────────► Seq :5341 (logs)
+     └──/metrics──► Prometheus :9090 ──► Grafana :3000 (dashboards + alertas)
+                          ▲
+     RabbitMQ :15692 ──────┘
+```
+
+- **Telemetría de servicio** (`SharedKernel.Telemetry.TelemetryExtensions.AddServiceTelemetry`): trazas + métricas + **logs** con exportador OTLP HTTP/protobuf explícito. El endpoint se resuelve por env `OTEL_EXPORTER_OTLP_ENDPOINT` (la inyecta Aspire) > config `OpenTelemetry:Endpoint` > default `http://localhost:4318`. El worker `OrderSaga.Worker/Program.cs` replica el patrón inline (incluye `WithLogging` OTLP).
+- **otel-collector** (`otel/opentelemetry-collector-contrib:0.118.0`): receivers OTLP explícitos en `0.0.0.0:4317` (gRPC) y `0.0.0.0:4318` (HTTP) — en 0.118 el default liga a loopback — con pipelines de trazas → Jaeger y de logs → Seq (`http://seq:80/ingest/otlp`). Los host ports `14317/14318` quedaron descartados.
+- **Seq** (`datalust/seq:latest`): UI `:5341`, auth deshabilitada (`SEQ_FIRSTRUN_NOAUTHENTICATION`) y volumen `seq-data`. La imagen de Jaeger ya no publica `4317/4318` (solo `16686`); sus antiguos logs OTLP los recibe ahora el collector.
+- **Grafana**: datasource Prometheus con **uid fijo `prometheus`**, provider de dashboards (`provisioning/dashboards/provider.yml`) y **2 dashboards provisionados** — `BookStore · API` (uid `bookstore-api`: request rate, latencia p95, error rate 5xx, peticiones activas; template var por `instance`) y `BookStore · RabbitMQ` (uid `bookstore-rabbitmq`: ready/unacked, consumidores, publ/deliv). **Alertas provisionadas** (`provisioning/alerting/`): `rules.yml` con 3 reglas (latencia p95 > 1 s, ratio 5xx > 5 %, colas RabbitMQ > 200), `contact-points.yml` (webhook placeholder `http://host.docker.internal:3001/hooks/none`) y `policies.yml` (`group_by: service_name`).
+- **Prometheus**: job `bookstore` sobre los 5 servicios dev (`host.docker.internal:5080/5100/5038/5248/5208`) + **job `rabbitmq`** en `host.docker.internal:15692` (`metrics_path /metrics/per-object`); el contenedor dev `bookstore-rabbitmq` expone `15692`.
+- **Aspire AppHost** (opcional, `src/AppHost/`): `dotnet run --project src/AppHost` orquesta los 6 proyectos con `AddProject<Projects.*>` fijando los puertos HTTP clásicos (`WithHttpEndpoint`: gateway 5080, auth 5100, catalog 5038, orders 5248, inventory 5208, saga) y `WaitFor` en el gateway; inyecta `ConnectionStrings__CatalogDb/OrdersDb/InventoryDb/OrderSagaDb` → `Host=localhost;Port=5432;Database=<db>;...` y `RabbitMQ__Host` → `rabbitmq://localhost:5672` para la infra dev existente (no gestiona contenedores). Su dashboard (`https://localhost:17017`) inyecta `OTEL_EXPORTER_OTLP_ENDPOINT` a los servicios. Requiere `dotnet new install Aspire.ProjectTemplates`; alternativa a los 6 `dotnet run`, no a la vez.
 - Instrumentación disponible: HTTP (ASP.NET Core), System.Net.Http, MassTransit, Npgsql y EF Core.
 
 ## 15. Despliegue
 
 Dos modos de ejecución equivalentes (no duplicados):
 
-- **Dev** (iteración): 6 procesos `dotnet run` en puertos dedicados + contenedores de infraestructura (`bookstore-postgres`, `bookstore-rabbitmq`, y opcional observabilidad por `docker-compose.observability.yml`).
+- **Dev** (iteración): 6 procesos `dotnet run` en puertos dedicados + contenedores de infraestructura (`bookstore-postgres`, `bookstore-rabbitmq`, y opcional observabilidad por `docker-compose.observability.yml`); alternativa equivalente: **Aspire AppHost** (`dotnet run --project src/AppHost`) que orquesta los 6 servicios con los mismos puertos reutilizando la infra dev (ver §14).
 - **Prod** (`docker/docker-compose.prod.yml`): 9 contenedores con Postgres/RabbitMQ propios en red interna; **único puerto público `:80`** (gateway). Los destinos YARP se inyectan por variables de entorno; el issuer OIDC (`OpenIddict__Issuer`) por defecto es la dirección interna `http://auth:5100`, resoluble por los servicios dentro de la red Docker; `BOOKSTORE_PUBLIC_ISSUER` lo sobreescribe para exposiciones tras dominio real. El servicio `apigateway` recibe en el compose ese mismo `OpenIddict__Issuer` y `OpenIddict__DisableTransportSecurityRequirement: "true"` (igual que los servicios con validación) para poder validar tokens en el borde dentro de la red.
 
 **CI/CD** (`../../.github/workflows/`):
@@ -253,7 +267,7 @@ flowchart LR
 - **Certificados de desarrollo en OpenIddict** (`AddDevelopmentEncryptionCertificate`): en un despliegue real hay que proveer certificados de firma/cifrado persistentes y expirar a HTTPS.
 - **Catálogo sin mensajería** de momento.
 - Pendientes: más ADR de decisiones clave en `docs/adr/`, contratos versionados y *contract testing*.
-- El **frontend SPA** (React, fuera del monorepo) consume el gateway por Authorization Code + PKCE; la **Fase 16** añadió búsqueda con debounce, **carrito persistente en `localStorage`** (clave `bookstore.cart`, checkout con `Idempotency-Key`), **paginación** de libros/pedidos y **configuración por entorno `VITE_*`** (`.env`, no secretos). La **Fase 18** añadió **seguimiento en vivo**: la página `/orders/:id` hace **polling** de `GET /api/v1/orders/{id}` (2 s) mientras el pedido no esté en estado final — el `OrderDto` ya exponía `status`/`updatedAt`, así que **no hubo cambios de contrato** — con timeline `Pending → Paid → Shipped → Delivered`, los estados reales de Orders (`Pending/Paid/Shipped/Delivered/Cancelled`) y un kit propio de **tests del frontend** (Vitest + React Testing Library, **12 tests**, fuera del monorepo). Quedan pendientes: *code-splitting* por rutas y hosting.
+- El **frontend SPA** (React, fuera del monorepo) consume el gateway por Authorization Code + PKCE; la **Fase 16** añadió búsqueda con debounce, **carrito persistente en `localStorage`** (clave `bookstore.cart`, checkout con `Idempotency-Key`), **paginación** de libros/pedidos y **configuración por entorno `VITE_*`** (`.env`, no secretos). La **Fase 18** añadió **seguimiento en vivo**: la página `/orders/:id` hace **polling** de `GET /api/v1/orders/{id}` (2 s) mientras el pedido no esté en estado final — el `OrderDto` ya exponía `status`/`updatedAt`, así que **no hubo cambios de contrato** — con timeline `Pending → Paid → Shipped → Delivered`, los estados reales de Orders (`Pending/Paid/Shipped/Delivered/Cancelled`) y un kit propio de **tests del frontend** (Vitest + React Testing Library, **12 tests**, fuera del monorepo). Quedan pendientes: *code-splitting* por rutas y hosting. La **Fase 19** amplió la observabilidad del backend: **logs por OTLP → Seq**, dashboards y alertas provisionadas en Grafana, scrape de RabbitMQ (`:15692`) y el **AppHost de .NET Aspire** como orquestación opcional de desarrollo (ver §14).
 
 ## 17. Decisiones de arquitectura (ADR)
 

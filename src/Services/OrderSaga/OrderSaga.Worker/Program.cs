@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using OpenTelemetry.Logs;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
@@ -30,7 +31,9 @@ public class Program
             {
                 var configuration = hostContext.Configuration;
 
-                var otlpEndpoint = configuration["OpenTelemetry:Endpoint"] ?? "http://localhost:4317";
+                var otlpEndpoint = Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT")
+                    ?? configuration["OpenTelemetry:Endpoint"]
+                    ?? "http://localhost:4318";
 
                 services.AddOpenTelemetry()
                     .ConfigureResource(r => r.AddService("OrderSaga.Worker"))
@@ -40,7 +43,8 @@ public class Program
                         .AddOtlpExporter(o => o.Endpoint = new Uri(otlpEndpoint)))
                     .WithMetrics(m => m
                         .AddMeter("MassTransit")
-                        .AddOtlpExporter(o => o.Endpoint = new Uri(otlpEndpoint)));
+                        .AddOtlpExporter(o => o.Endpoint = new Uri(otlpEndpoint)))
+                    .WithLogging(l => l.AddOtlpExporter(o => o.Endpoint = new Uri(otlpEndpoint)));
 
                 services.AddDbContext<OrderSagaDbContext>(options =>
                     options.UseNpgsql(configuration.GetConnectionString("OrderSagaDb")));

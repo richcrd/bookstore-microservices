@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using OpenTelemetry.Logs;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
@@ -12,7 +13,7 @@ public static class TelemetryExtensions
     public static IServiceCollection AddServiceTelemetry(this IServiceCollection services,
         IConfiguration configuration, string serviceName)
     {
-        var endpoint = configuration["OpenTelemetry:Endpoint"] ?? "http://localhost:4317";
+        var endpoint = ResolveOtlpEndpoint(configuration);
 
         services.AddOpenTelemetry()
             .ConfigureResource(r => r.AddService(serviceName))
@@ -21,17 +22,37 @@ public static class TelemetryExtensions
                 .AddHttpClientInstrumentation()
                 .AddEntityFrameworkCoreInstrumentation()
                 .AddSource("MassTransit", serviceName)
-                .AddOtlpExporter(o => o.Endpoint = new Uri(endpoint)))
+                .AddOtlpExporter(o =>
+                {
+                    o.Endpoint = new Uri(endpoint);
+                    o.Protocol = OpenTelemetry.Exporter.OtlpExportProtocol.HttpProtobuf;
+                }))
             .WithMetrics(m => m
                 .AddAspNetCoreInstrumentation()
                 .AddHttpClientInstrumentation()
                 .AddMeter("Microsoft.AspNetCore.Hosting", "Microsoft.AspNetCore.Server.Kestrel",
                     "System.Net.Http", "MassTransit", serviceName)
-                .AddPrometheusExporter());
+                .AddOtlpExporter(o =>
+                {
+                    o.Endpoint = new Uri(endpoint);
+                    o.Protocol = OpenTelemetry.Exporter.OtlpExportProtocol.HttpProtobuf;
+                })
+                .AddPrometheusExporter())
+            .WithLogging(l => l
+                .AddOtlpExporter(o =>
+                {
+                    o.Endpoint = new Uri(endpoint);
+                    o.Protocol = OpenTelemetry.Exporter.OtlpExportProtocol.HttpProtobuf;
+                }));
 
         return services;
     }
 
     public static IApplicationBuilder UseServiceTelemetry(this IApplicationBuilder app)
         => app.UseOpenTelemetryPrometheusScrapingEndpoint();
+
+    private static string ResolveOtlpEndpoint(IConfiguration configuration) =>
+        Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT")
+        ?? configuration["OpenTelemetry:Endpoint"]
+        ?? "http://localhost:4318";
 }
