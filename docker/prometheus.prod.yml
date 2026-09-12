@@ -1,0 +1,18 @@
+# Scrape config de PRODUCCIÓN: los servicios se resuelven por nombre de contenedor
+# dentro de la red del stack bookstore-prod (ver docker-compose.prod.yml).
+
+scrape_configs:
+  - job_name: "bookstore"
+    static_configs:
+      - targets:
+          - "apigateway:5080"
+          - "auth:5100"
+          - "catalog:5038"
+          - "orders:5248"
+          - "inventory:5208"
+
+  - job_name: "rabbitmq"
+    metrics_path: /metrics/per-object
+    static_configs:
+      - targets:
+          - "rabbitmq:15692"

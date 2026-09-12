@@ -2,10 +2,10 @@ apiVersion: 1
 
 contactPoints:
   - orgId: 1
-    name: webhook-local
+    name: alert-webhook
     receivers:
-      - uid: webhook-local
+      - uid: alert-webhook
         type: webhook
         settings:
-          url: http://host.docker.internal:3001/hooks/none
+          url: ${GRAFANA_ALERT_WEBHOOK_URL}
         disableResolveMessage: false

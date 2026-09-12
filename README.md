@@ -39,8 +39,8 @@
 - **Resiliencia**: reintentos exponenciales y circuit breaker (`Microsoft.Extensions.Http.Resilience`/Polly).
 - **Idempotencia**: header `Idempotency-Key` en `POST /orders` (retry seguro sin duplicar pedidos).
 - **Migraciones de esquema automáticas** en el arranque de cada servicio (EF Core).
-- **Observabilidad**: OpenTelemetry → collector → Jaeger (trazas) + Seq (logs); Prometheus + Grafana con dashboards y alertas provisionadas (métricas `/metrics` y scrape de RabbitMQ).
-- **Docker de producción**: multi-stage, compose con Postgres/RabbitMQ propios y solo `:80` expuesto.
+- **Observabilidad**: OpenTelemetry → collector → Jaeger (trazas) + Seq (logs); Prometheus + Grafana con dashboards y alertas provisionadas (métricas `/metrics` y scrape de RabbitMQ) — **también desplegada en el stack de producción** con alertas (webhook configurable por entorno).
+- **Docker de producción**: multi-stage, compose con Postgres/RabbitMQ propios, observabilidad incluida (collector/Jaeger/Seq/Prometheus/Grafana) y solo `:80` expuesto al exterior.
 - **CI/CD**: GitHub Actions (build+test en cada push) y deploy por tags `v*`.
 - **94 tests** de backend (unit + integración con Testcontainers); el **SPA** suma **12 tests propios** (Vitest + React Testing Library, fuera del monorepo).
 
@@ -223,17 +223,17 @@ dotnet test BookStore.slnx
 ## Deploy / CI-CD
 
 - **CI** (`.github/workflows/ci.yml`): en cada push/PR a `main` → `dotnet restore/build/test`. Estado: [![CI](https://github.com/richcrd/bookstore-microservices/actions/workflows/ci.yml/badge.svg)](https://github.com/richcrd/bookstore-microservices/actions/workflows/ci.yml)
-- **CD** (`.github/workflows/cd.yml`): al crear un tag `v*` → SSH al servidor → `docker compose build` + `up -d` del stack de producción.
+- **CD** (`.github/workflows/cd.yml`): al crear un tag `v*` → SSH al servidor → `docker compose build` + `up -d` del stack de producción; propaga `GRAFANA_ALERT_WEBHOOK_URL` al servidor para el contact point de alertas de Grafana.
 
-Necesita secrets en el repo: `SERVER_HOST`, `SERVER_USER`, `SSH_PRIVATE_KEY` y la variable `DEPLOY_DIR`.
+Necesita secrets en el repo: `SERVER_HOST`, `SERVER_USER`, `SSH_PRIVATE_KEY`, `GRAFANA_ALERT_WEBHOOK_URL` y la variable `DEPLOY_DIR`.
 
-**Stack de producción** (`docker/docker-compose.prod.yml`): 9 contenedores (Postgres + RabbitMQ propios, 6 servicios y el gateway) con el gateway publicado en **`:80`**.
+**Stack de producción** (`docker/docker-compose.prod.yml`): **13 contenedores** — Postgres + RabbitMQ propios, los 6 proyectos ejecutables (5 servicios + gateway) y **5 de observabilidad** (otel-collector, Jaeger, Seq, Prometheus y Grafana) — con el gateway publicado en **`:80`** y las UIs de observabilidad (`16686`, `5341`, `9090`, `3000`, `4317`, `4318`) publicadas **solo para inspección**; en servidores reales el firewall debe mantener únicamente `:80` abierto.
 
 Historial completo de **fases construidas** (qué se añadió, qué no y por qué) en [docs/phases.md](docs/phases.md).
 
 ## Observabilidad
 
-Los servicios emiten **trazas + métricas + logs** por OTLP HTTP/protobuf al **collector** (`docker compose -f docker/docker-compose.observability.yml up -d`), que enruta las trazas a Jaeger y los logs a Seq. En paralelo, Prometheus scrapea `/metrics` de los servicios y el endpoint de métricas de RabbitMQ (`:15692`), y Grafana sirve dashboards y alertas provisionadas.
+Los servicios emiten **trazas + métricas + logs** por OTLP **HTTP/protobuf** al **collector** apuntando al **path por señal** (`/v1/traces`, `/v1/metrics`, `/v1/logs`): configura el endpoint base **sin path** (dev `http://localhost:4318`; prod `http://otel-collector:4318`, nombre de servicio del compose) — el SDK añade `/v1/{signal}`. El collector enruta las trazas a Jaeger y los logs a Seq. En paralelo, Prometheus scrapea `/metrics` de los servicios y el endpoint de métricas de RabbitMQ (`:15692`), y Grafana sirve dashboards y alertas provisionadas con webhook configurable por entorno.
 
 | Herramienta | URL | Qué ver |
 |---|---|---|
@@ -241,9 +241,11 @@ Los servicios emiten **trazas + métricas + logs** por OTLP HTTP/protobuf al **c
 | Jaeger | `http://localhost:16686` | Trazas distribuidas end-to-end (una orden completa). |
 | Seq | `http://localhost:5341` | Logs agregados (ingest OTLP vía collector; auth deshabilitada en dev). |
 | Prometheus | `http://localhost:9090` | Métricas `/metrics` (scrape 10s) de los servicios + **RabbitMQ `:15692`** (`Status → Targets`). |
-| Grafana | `http://localhost:3000` (`admin/admin`) | Dashboards provisionados `BookStore · API` y `BookStore · RabbitMQ` + alertas (latencia p95 > 1s, ratio 5xx > 5%, colas RabbitMQ > 200). |
+| Grafana | `http://localhost:3000` (`admin/admin`) | Dashboards provisionados `BookStore · API` y `BookStore · RabbitMQ` + alertas (latencia p95 > 1s, ratio 5xx > 5%, colas RabbitMQ > 200) con contact point webhook `${GRAFANA_ALERT_WEBHOOK_URL}`. |
 
 El contenedor dev de RabbitMQ debe exponer el puerto `15692` (métricas Prometheus, ver comando `docker run` del Quickstart). Ejemplo de query Prometheus: `rate(http_server_request_duration_seconds_count[5m])` o filtrada por servicio con `{service_name="Orders.API"}`.
+
+**En producción** (Fase 20) la observabilidad vive dentro del propio stack (`docker-compose.prod.yml`): otel-collector, Jaeger, Seq, Prometheus y Grafana se despliegan junto a los servicios, con `prometheus.prod.yml` scrapeando por **nombre de contenedor** (`apigateway:5080`, `auth:5100`, `catalog:5038`, `orders:5248`, `inventory:5208`) + RabbitMQ (`rabbitmq:15692`, `/metrics/per-object`), y el contact point de alertas resolviéndose desde `GRAFANA_ALERT_WEBHOOK_URL` (default placeholder `http://host.docker.internal:3001/hooks/none`; el CD lo propaga como secret). Las UIs (`16686`, `5341`, `9090`, `3000`, `4317`, `4318`) se publican en el compose **solo para inspección**: el gateway sigue siendo el único puerto público `:80` y en servidores reales el firewall debe mantener solo `:80` abierto. En desarrollo se sigue usando `docker compose -f docker/docker-compose.observability.yml up -d`.
 
 ## Aspire (AppHost)
 

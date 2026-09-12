@@ -40,11 +40,23 @@ public class Program
                     .WithTracing(t => t
                         .AddEntityFrameworkCoreInstrumentation()
                         .AddSource("MassTransit", "OrderSaga.Worker")
-                        .AddOtlpExporter(o => o.Endpoint = new Uri(otlpEndpoint)))
+                        .AddOtlpExporter(o =>
+                        {
+                            o.Endpoint = new Uri($"{otlpEndpoint.TrimEnd('/')}/v1/traces");
+                            o.Protocol = OpenTelemetry.Exporter.OtlpExportProtocol.HttpProtobuf;
+                        }))
                     .WithMetrics(m => m
                         .AddMeter("MassTransit")
-                        .AddOtlpExporter(o => o.Endpoint = new Uri(otlpEndpoint)))
-                    .WithLogging(l => l.AddOtlpExporter(o => o.Endpoint = new Uri(otlpEndpoint)));
+                        .AddOtlpExporter(o =>
+                        {
+                            o.Endpoint = new Uri($"{otlpEndpoint.TrimEnd('/')}/v1/metrics");
+                            o.Protocol = OpenTelemetry.Exporter.OtlpExportProtocol.HttpProtobuf;
+                        }))
+                    .WithLogging(l => l.AddOtlpExporter(o =>
+                    {
+                        o.Endpoint = new Uri($"{otlpEndpoint.TrimEnd('/')}/v1/logs");
+                        o.Protocol = OpenTelemetry.Exporter.OtlpExportProtocol.HttpProtobuf;
+                    }));
 
                 services.AddDbContext<OrderSagaDbContext>(options =>
                     options.UseNpgsql(configuration.GetConnectionString("OrderSagaDb")));

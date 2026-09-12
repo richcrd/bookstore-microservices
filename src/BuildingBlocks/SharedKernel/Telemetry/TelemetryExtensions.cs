@@ -24,7 +24,7 @@ public static class TelemetryExtensions
                 .AddSource("MassTransit", serviceName)
                 .AddOtlpExporter(o =>
                 {
-                    o.Endpoint = new Uri(endpoint);
+                    o.Endpoint = new Uri(OtlpSignalEndpoint(endpoint, "traces"));
                     o.Protocol = OpenTelemetry.Exporter.OtlpExportProtocol.HttpProtobuf;
                 }))
             .WithMetrics(m => m
@@ -34,14 +34,14 @@ public static class TelemetryExtensions
                     "System.Net.Http", "MassTransit", serviceName)
                 .AddOtlpExporter(o =>
                 {
-                    o.Endpoint = new Uri(endpoint);
+                    o.Endpoint = new Uri(OtlpSignalEndpoint(endpoint, "metrics"));
                     o.Protocol = OpenTelemetry.Exporter.OtlpExportProtocol.HttpProtobuf;
                 })
                 .AddPrometheusExporter())
             .WithLogging(l => l
                 .AddOtlpExporter(o =>
                 {
-                    o.Endpoint = new Uri(endpoint);
+                    o.Endpoint = new Uri(OtlpSignalEndpoint(endpoint, "logs"));
                     o.Protocol = OpenTelemetry.Exporter.OtlpExportProtocol.HttpProtobuf;
                 }));
 
@@ -55,4 +55,7 @@ public static class TelemetryExtensions
         Environment.GetEnvironmentVariable("OTEL_EXPORTER_OTLP_ENDPOINT")
         ?? configuration["OpenTelemetry:Endpoint"]
         ?? "http://localhost:4318";
+
+    private static string OtlpSignalEndpoint(string baseEndpoint, string signal) =>
+        $"{baseEndpoint.TrimEnd('/')}/v1/{signal}";
 }

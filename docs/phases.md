@@ -28,8 +28,9 @@
 | 17. Gateway: auth en el borde | OIDC en el edge + rate limiting testeado (deuda Fase 6) | 401 en orders/stock-items sin token; ráfaga 30 → 20 OK + 429; 94 tests | ✔ |
 | 18. Frontend SPA v3 | Seguimiento del pedido en vivo (polling) + tests del frontend | npm test 12/12; badge con estados reales; E2E Pending → Shipped por polling | ✔ |
 | 19. Observabilidad 2 + Aspire | Stack observability v2 (collector + Seq + dashboards/alertas) + .NET Aspire AppHost | Trazas en Jaeger, logs en Seq, dashboards/alertas en Grafana, AppHost levantando los 6 servicios | ✔ |
+| 20. Observabilidad en producción | Stack prod con collector/Jaeger/Seq/Prometheus/Grafana + alertas con webhook por env | E2E prod (12 contenedores up, Pending→Shipped por `:80`, 6 servicios en Jaeger, 147 eventos en Seq, targets Prometheus up, 3 reglas + contact point resuelto) | ✔ |
 
-**Estado final**: 94 tests en verde · CI/CD operativo · stack prod validado · gateway con auth OIDC en el borde y rate limiting testeado · observabilidad v2 (logs en Seq, dashboards y alertas en Grafana, scrape de RabbitMQ) y orquestación opcional con .NET Aspire · frontend SPA v3 (React + OIDC) validado end-to-end contra el gateway (búsqueda, carrito persistente, paginación y seguimiento del pedido en vivo por polling), con 12 tests propios (Vitest).
+**Estado final**: 94 tests en verde · CI/CD operativo · stack prod validado · gateway con auth OIDC en el borde y rate limiting testeado · observabilidad v2 (logs en Seq, dashboards y alertas en Grafana, scrape de RabbitMQ) y orquestación opcional con .NET Aspire · **Fase 20: observabilidad desplegada en el stack de producción** (collector/Jaeger/Seq/Prometheus/Grafana en el compose de prod, scrape por nombre de contenedor, contact point de alertas por `GRAFANA_ALERT_WEBHOOK_URL` y fix del path OTLP `/v1/{signal}`) · frontend SPA v3 (React + OIDC) validado end-to-end contra el gateway (búsqueda, carrito persistente, paginación y seguimiento del pedido en vivo por polling), con 12 tests propios (Vitest).
 
 ---
 
@@ -340,7 +341,33 @@ OrderCreated → AwaitingPayment → (PaymentApproved) → ShipmentRequested →
 
 - **Aspire no gestiona la infraestructura**: el AppHost reutiliza los contenedores dev (`bookstore-postgres`, `bookstore-rabbitmq`) vía connection strings por entorno; no se usan recursos `AddPostgres`/`AddRabbitMQ` de Aspire para no duplicar el ciclo de vida de una infra ya cubierta por Docker.
 - **El contact point de alertas es un placeholder**: `webhook-local` apunta a `http://host.docker.internal:3001/hooks/none` (sin receptor real en `:3001`); las 3 reglas y las políticas quedan operativas y listas para conectar un canal real (Slack/Teams/PagerDuty) en producción.
-- **El stack observability v2 es solo dev**: el compose de producción no despliega collector/Seq/Grafana; los contenedores de prod mantienen `:80` como único puerto público y la observabilidad queda para el entorno de desarrollo (o un futuro stack de observabilidad independiente).
+- **El stack observability v2 era solo dev**: hasta la Fase 20 el compose de producción no desplegaba collector/Seq/Grafana (**cerrado en la Fase 20**: la observabilidad se incorporó al stack de prod, manteniendo `:80` como único puerto público y las UIs de observabilidad solo para inspección).
 - **Seq no sustituye a los logs de consola**: los servicios siguen logueando a stdout (capturado por Docker); Seq agrega los logs OTLP en dev para correlacionarlos con las trazas.
 
 **Verificación**: `docker compose -f docker/docker-compose.observability.yml up -d` → el collector recibe OTLP en `4317/4318`; traza end-to-end de una orden en Jaeger; logs de los servicios visibles en Seq (UI `:5341`); dashboards `BookStore · API` / `BookStore · RabbitMQ` en Grafana con datos por `instance` y de colas; alertas provisionadas visibles en `Alerting`; `dotnet run --project src/AppHost` levanta los 6 servicios con dashboard en `https://localhost:17017`; suite de backend intacta (94 tests).
+
+---
+
+## Fase 20 — Observabilidad en producción + alertas reales
+
+**Qué se añadió** (cierra la deuda de la Fase 19 de «observabilidad solo dev»):
+
+- **Stack de observabilidad dentro de `docker-compose.prod.yml`**: 5 nuevos servicios —
+  - **otel-collector** (`otel/opentelemetry-collector-contrib:0.118.0`): mount de `./otel-collector.yml`, puertos `4317`/`4318`, `depends_on` jaeger + seq.
+  - **jaeger** (`jaegertracing/all-in-one:1.76.0`): UI `16686`, `COLLECTOR_OTLP_ENABLED: "true"`.
+  - **seq** (`datalust/seq`): UI `5341`, `ACCEPT_EULA: "Y"`, `SEQ_FIRSTRUN_NOAUTHENTICATION: "true"`, volumen `seq-data`.
+  - **prometheus** (`prom/prometheus:v2.55.0`): mount de `./prometheus.prod.yml`, volumen `prometheus-data`, retención **15 d** (`--storage.tsdb.retention.time=15d`), `:9090` y `--config.file` explícito.
+  - **grafana** (`grafana/grafana:11.4.0`): provisioning montado (`./grafana/provisioning`), volumen `grafana-data`, `:3000`, `GF_SECURITY_ADMIN_USER=admin` + `GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}` y `GRAFANA_ALERT_WEBHOOK_URL=${GRAFANA_ALERT_WEBHOOK_URL:-http://host.docker.internal:3001/hooks/none}`.
+- **Endpoint OTLP vivo en prod**: todos los servicios del stack pasan de `OTEL_EXPORTER_OTLP_ENDPOINT: http://host.docker.internal:4317` (telemetría muerta en prod) a **`http://otel-collector:4318`** (nombre de servicio del compose). En dev sigue `http://localhost:4318`.
+- **`docker/prometheus.prod.yml` (nuevo)**: job `bookstore` por **nombre de contenedor** (`apigateway:5080`, `auth:5100`, `catalog:5038`, `orders:5248`, `inventory:5208`) + job `rabbitmq` en `rabbitmq:15692` con `metrics_path /metrics/per-object`.
+- **Contact point de alertas por entorno**: `docker/grafana/provisioning/alerting/contact-points.yml` usa `${GRAFANA_ALERT_WEBHOOK_URL}` (interpolación de entorno de Grafana; el valor lo inyectan los composes con default placeholder `http://host.docker.internal:3001/hooks/none`); `policies.yml` enruta al receiver `alert-webhook`.
+- **CD con el webhook**: `.github/workflows/cd.yml` pasa `GRAFANA_ALERT_WEBHOOK_URL: ${{ secrets.GRAFANA_ALERT_WEBHOOK_URL }}` al servidor remoto (`env` + `envs:` del `appleboy/ssh-action`) para que el compose de prod interpole el contact point.
+- **Fix de causa raíz en la telemetría** (`src/BuildingBlocks/SharedKernel/Telemetry/TelemetryExtensions.cs` y `src/Services/OrderSaga/OrderSaga.Worker/Program.cs`): los exportadores OTLP HTTP/protobuf escriben ahora al **path por señal** `${endpoint.TrimEnd('/')}/v1/traces`, `/v1/metrics` y `/v1/logs`. Antes posteaban a la raíz del endpoint (`4318/`) y el receiver `otlp/http` del collector respondía **404** → en prod la telemetría se descartaba. Contrato de configuración: **el endpoint base se configura sin path** (dev `http://localhost:4318`, prod `http://otel-collector:4318`) y el SDK añade `/v1/{signal}`.
+
+**Qué no se añadió y por qué**:
+
+- **Las UIs de observabilidad son de inspección, no públicas**: `16686`, `5341`, `9090`, `3000`, `4317` y `4318` se publican en el compose para poder inspeccionar el stack localmente, pero el gateway sigue siendo el único puerto público `:80`; en servidores reales el firewall debe exponer **solo `:80`** (las UIs no llevan TLS ni autenticación propia — deuda arrastrada de fases previas).
+- **El webhook de alertas requiere URL real**: el default es el placeholder `http://host.docker.internal:3001/hooks/none`; las 3 reglas y las políticas quedan operativas, pero para notificar de verdad hay que definir el secret `GRAFANA_ALERT_WEBHOOK_URL` en el servidor (Slack/Teams/PagerDuty u otro receptor).
+- **El worker de la saga no entra en el scrape de Prometheus**: no expone endpoint HTTP de métricas (no lleva `ASPNETCORE_URLS`), así que el job `bookstore` cubre las 5 APIs + RabbitMQ; sus trazas sí llegan a Jaeger vía OTLP.
+
+**Verificación**: `docker compose -f docker/docker-compose.prod.yml up -d` → **12 contenedores** del stack en marcha; pedido `Pending → Shipped` completo vía gateway `:80`; **Jaeger** lista los **6 servicios** con trazas; **Seq** recibe **147 eventos** de log; **Prometheus** con todos los targets **up** (5 servicios del job `bookstore` + RabbitMQ `:15692`); **Grafana** con los dashboards `BookStore · API` y `BookStore · RabbitMQ`, las **3 reglas de alerta** provisionadas y el **contact point webhook con URL resuelta desde el entorno**. Suite de backend intacta (94 tests).

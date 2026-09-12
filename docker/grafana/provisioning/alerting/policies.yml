@@ -2,5 +2,5 @@ apiVersion: 1
 
 policies:
   - orgId: 1
-    receiver: webhook-local
+    receiver: alert-webhook
     group_by: ["service_name"]
