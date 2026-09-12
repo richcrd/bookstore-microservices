@@ -249,7 +249,7 @@ flowchart LR
 - **Certificados de desarrollo en OpenIddict** (`AddDevelopmentEncryptionCertificate`): en un despliegue real hay que proveer certificados de firma/cifrado persistentes y expirar a HTTPS.
 - **Catálogo sin mensajería** de momento.
 - Pendientes: más ADR de decisiones clave en `docs/adr/`, contratos versionados y *contract testing*.
-- El **frontend SPA** (React, fuera del monorepo) ya consume el gateway por Authorization Code + PKCE; la evolución pendiente (búsqueda avanzada, carrito persistente, paginación de la UI, tests del SPA y hosting) se trackea en la Fase 16.
+- El **frontend SPA** (React, fuera del monorepo) consume el gateway por Authorization Code + PKCE; la **Fase 16** añadió búsqueda con debounce, **carrito persistente en `localStorage`** (clave `bookstore.cart`, checkout con `Idempotency-Key`), **paginación** de libros/pedidos y **configuración por entorno `VITE_*`** (`.env`, no secretos). Quedan pendientes: tests del frontend, *code-splitting* por rutas y hosting.
 
 ## 17. Decisiones de arquitectura (ADR)
 

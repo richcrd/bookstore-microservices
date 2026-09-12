@@ -24,8 +24,9 @@
 | 13. Documentación | Repo enterprise (README, CONTRIBUTING, etc.) | Docs enlazadas | ✔ |
 | 14. Seguridad OIDC | Proveedor OpenID Connect + validación por discovery | Login OIDC + 401/403 + suite verde | ✔ |
 | 15. Frontend SPA | Frontend SPA (React + OIDC) | Login + pedido end-to-end vía gateway; build/tsc OK | ✔ |
+| 16. Frontend SPA v2 | SPA v2: búsqueda, carrito y paginación | tsc + build OK; flujo añadir → carrito → pedido validado | ✔ |
 
-**Estado final**: 92 tests en verde · CI/CD operativo · stack prod validado · frontend SPA (React + OIDC) validado end-to-end contra el gateway.
+**Estado final**: 92 tests en verde · CI/CD operativo · stack prod validado · frontend SPA v2 (React + OIDC) validado end-to-end contra el gateway (búsqueda, carrito persistente y paginación).
 
 ---
 
@@ -259,3 +260,22 @@ OrderCreated → AwaitingPayment → (PaymentApproved) → ShipmentRequested →
 **Qué no se añadió y por qué** (pasa a la **Fase 16**): búsqueda avanzada en el catálogo, carrito persistente (localStorage), paginación de la UI, tests del frontend y hosting del SPA. El SPA se mantiene fuera del monorepo por alcance (el repo sigue siendo el backend de referencia) y su despliegue queda desacoplado del stack Docker de producción.
 
 **Verificación**: `tsc --noEmit` limpio y `vite build` OK; flujo completo validado a mano (login customer/admin, creación de pedido → saga → `Shipped`, logout con 302).
+
+---
+
+## Fase 16 — Frontend SPA v2 (búsqueda, carrito y paginación)
+
+**Qué se añadió** (evolución del SPA de la Fase 15; el frontend sigue viviendo **fuera del monorepo** en `~/Desktop/BookStoreWeb`):
+
+- **Configuración por entorno (`.env`)**: variables `VITE_GATEWAY_URL` y `VITE_OIDC_CLIENT_ID` en `.env` (dev), `.env.production` (prod) y `.env.example` (plantilla versionable), con tipos en `src/vite-env.d.ts` y consumo en `src/app/config.ts`. Son **configuración por entorno, NO secretos**: un SPA embute estas variables en el bundle en *build time* y el navegador siempre puede leerlas; nada sensible (signing keys, credenciales) viaja al frontend. La seguridad del flujo se apoya en **Authorization Code + PKCE** con el cliente público `web-spa` (*client_id* y URLs no son secretos por diseño de OAuth2).
+- **Carrito persistente (localStorage)**: clave `bookstore.cart` (`src/shared/storageKeys.ts`); dominio `Cart`/`CartItem` (bookId, title, author, unitPrice, currency, quantity) y puerto `CartStoragePort { load, save, clear }` (`src/domain/models.ts` / `ports.ts`); implementación `CartStorageImpl` con localStorage directo (JSON + cast, sin guard defensivo); `CartContext.tsx` con `CartProvider` + hook `useCart()` (add, setQuantity, remove, clear, count, total, currency) y persistencia automática.
+- **Nueva página de carrito (`CartPage.tsx`)**: +/−, quitar, vaciar, aviso de login si no hay sesión y checkout que crea el pedido con header `Idempotency-Key` (GUID) y **vacía el carrito al confirmar**. Es el nuevo flujo de creación de pedido (reemplaza a la antigua página «Nuevo pedido»); la ruta `/orders/new` redirige a `/cart` y la nav muestra «Carrito (n)» con el contador.
+- **Búsqueda en catálogo**: input en la home con debounce (`useDeferredValue`) y reseteo de página al cambiar el término; el `queryKey` de TanStack Query combina `search + page`.
+- **Paginación**: componente reutilizable `Pagination` (Anterior · Página X de Y · Siguiente) aplicado a libros (home) y pedidos («Mis pedidos»), con `keepPreviousData` de TanStack Query y `page` en el `queryKey`; el backend ya paginaba (`page`/`pageSize`) y la UI ahora lo explota.
+- **Convención de código acordada** para el SPA y futuros cambios: código directo, sin escritura defensiva ni helpers de más (nada de `parse`/`normalize`/`safe`/`fallback`/`resolve` en nombres propios; el `.parse()` de zod es API de librería, no nombre propio).
+
+**Qué no se añadió y por qué**:
+- **Tests del frontend**: el SPA aún no tiene infraestructura de testing (ni runner ni tests); la validación de esta fase se hizo con `tsc --noEmit` + `vite build` y verificación manual del flujo. Pendiente junto con el kit de testing del frontend.
+- **Code-splitting por rutas** (lazy loading de páginas): todas las rutas se mantienen en un solo bundle por simplicidad; con una aplicación aún pequeña la división de código aportaría poco hoy. Pendiente como optimización futura.
+
+**Verificación**: `tsc` limpio y `vite build` OK; flujo completado a mano: búsqueda con debounce → añadir al carrito → recarga (el carrito persiste en `localStorage`) → ajuste de cantidades +/− → crear pedido con `Idempotency-Key` → carrito vaciado y pedido visible en «Mis pedidos» con paginación.

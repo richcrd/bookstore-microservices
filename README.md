@@ -83,6 +83,8 @@ La interfaz web (React) **vive fuera del monorepo** (carpeta local del autor `~/
 
 - **Arranque**: `npm run dev` en `http://localhost:5173`; el gateway habilita CORS para ese origen (política `Frontend`).
 - **Login**: `customer/customer123` (rol `customer`) o `admin/admin123` (rol `admin`), con el flujo OIDC de Authorization Code + PKCE (cliente `web-spa`) contra `http://localhost:5080`.
+- **Configuración**: se define por entorno con `VITE_GATEWAY_URL` y `VITE_OIDC_CLIENT_ID` (`.env`/`.env.production`; plantilla en `.env.example`) — **configuración, no secretos**; la seguridad del flujo reside en Authorization Code + PKCE (cliente público `web-spa`).
+- **Carrito y paginación**: el carrito persiste en `localStorage` (clave `bookstore.cart`) y el checkout crea el pedido con `Idempotency-Key`; la home busca con debounce y los listados de libros/pedidos pagan con el componente `Pagination`.
 - **API**: todas las llamadas pasan por el gateway `http://localhost:5080` (`/api/v1/*` y endpoints OIDC `/connect/*`, `/.well-known/*`).
 
 ## Requisitos previos
