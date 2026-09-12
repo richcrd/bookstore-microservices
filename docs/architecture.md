@@ -253,7 +253,7 @@ flowchart LR
 - **Certificados de desarrollo en OpenIddict** (`AddDevelopmentEncryptionCertificate`): en un despliegue real hay que proveer certificados de firma/cifrado persistentes y expirar a HTTPS.
 - **Catálogo sin mensajería** de momento.
 - Pendientes: más ADR de decisiones clave en `docs/adr/`, contratos versionados y *contract testing*.
-- El **frontend SPA** (React, fuera del monorepo) consume el gateway por Authorization Code + PKCE; la **Fase 16** añadió búsqueda con debounce, **carrito persistente en `localStorage`** (clave `bookstore.cart`, checkout con `Idempotency-Key`), **paginación** de libros/pedidos y **configuración por entorno `VITE_*`** (`.env`, no secretos). Quedan pendientes: tests del frontend, *code-splitting* por rutas y hosting.
+- El **frontend SPA** (React, fuera del monorepo) consume el gateway por Authorization Code + PKCE; la **Fase 16** añadió búsqueda con debounce, **carrito persistente en `localStorage`** (clave `bookstore.cart`, checkout con `Idempotency-Key`), **paginación** de libros/pedidos y **configuración por entorno `VITE_*`** (`.env`, no secretos). La **Fase 18** añadió **seguimiento en vivo**: la página `/orders/:id` hace **polling** de `GET /api/v1/orders/{id}` (2 s) mientras el pedido no esté en estado final — el `OrderDto` ya exponía `status`/`updatedAt`, así que **no hubo cambios de contrato** — con timeline `Pending → Paid → Shipped → Delivered`, los estados reales de Orders (`Pending/Paid/Shipped/Delivered/Cancelled`) y un kit propio de **tests del frontend** (Vitest + React Testing Library, **12 tests**, fuera del monorepo). Quedan pendientes: *code-splitting* por rutas y hosting.
 
 ## 17. Decisiones de arquitectura (ADR)
 

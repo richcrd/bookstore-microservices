@@ -26,8 +26,9 @@
 | 15. Frontend SPA | Frontend SPA (React + OIDC) | Login + pedido end-to-end vía gateway; build/tsc OK | ✔ |
 | 16. Frontend SPA v2 | SPA v2: búsqueda, carrito y paginación | tsc + build OK; flujo añadir → carrito → pedido validado | ✔ |
 | 17. Gateway: auth en el borde | OIDC en el edge + rate limiting testeado (deuda Fase 6) | 401 en orders/stock-items sin token; ráfaga 30 → 20 OK + 429; 94 tests | ✔ |
+| 18. Frontend SPA v3 | Seguimiento del pedido en vivo (polling) + tests del frontend | npm test 12/12; badge con estados reales; E2E Pending → Shipped por polling | ✔ |
 
-**Estado final**: 94 tests en verde · CI/CD operativo · stack prod validado · gateway con auth OIDC en el borde y rate limiting testeado · frontend SPA v2 (React + OIDC) validado end-to-end contra el gateway (búsqueda, carrito persistente y paginación).
+**Estado final**: 94 tests en verde · CI/CD operativo · stack prod validado · gateway con auth OIDC en el borde y rate limiting testeado · frontend SPA v3 (React + OIDC) validado end-to-end contra el gateway (búsqueda, carrito persistente, paginación y seguimiento del pedido en vivo por polling), con 12 tests propios (Vitest).
 
 ---
 
@@ -298,3 +299,24 @@ OrderCreated → AwaitingPayment → (PaymentApproved) → ShipmentRequested →
 - **El rate limiter sigue siendo global y fijo por IP**: no hay políticas por ruta ni por usuario, ni cola (`QueueLimit 0` → rechazo directo); es un límite de abuso básico, no un plan de QoS por cliente (mejora futura).
 
 **Verificación**: E2E manual en dev (gateway `:5080`): `GET /api/v1/orders` sin token → **401**; con token (cliente `cli`, *password grant*) → **200**; `/.well-known/openid-configuration` y `/api/v1/books` → **200** públicos; ráfaga de 30 GET → 20 OK y luego **429** con `Retry-After: 15`; suite **94/94** en verde.
+
+---
+
+## Fase 18 — Frontend SPA v3: seguimiento del pedido en vivo + tests del frontend
+
+**Qué se añadió** (evolución del SPA de las Fases 15/16; el frontend sigue viviendo **fuera del monorepo** en `~/Desktop/BookStoreWeb`. **El backend no cambió**: `GET /api/v1/orders/{id}` ya devolvía `status` + `updatedAt` en `OrderDto` y el seguimiento se implementa por polling):
+
+- **Corrección de incoherencia en el badge de estado**: la versión anterior pintaba los estados internos de la saga (`AwaitingPayment`/`PaymentApproved`/`ShipmentRequested`/`Completed`), que **nunca llegan a la API de orders** — por eso `Paid` se renderizaba en gris. El SPA usa ahora los estados reales que produce la saga en Orders (`Pending/Paid/Shipped/Delivered/Cancelled`, validado en `Orders.Domain/Enums/OrderStatus.cs`): la saga publica `ChangeOrderStatusCommand` con `Paid`, `Shipped` y `Cancelled`, pero nunca `Delivered`.
+- **Módulo puro `src/application/orders/orderStatus.ts`**: `ORDER_STATUS_LABEL` (Pendiente/Pagado/Enviado/Entregado/Cancelado), `ORDER_STEPS` (`Pending → Paid → Shipped → Delivered`), `orderStatusLabel`, `orderStatusStep` e `isOrderFinished` (`Shipped`/`Delivered`/`Cancelled` son finales porque la saga termina en `Shipped`).
+- **Polling de 2 s**: `useOrder(id)` hace *refetch* cada 2 s mientras el pedido no esté en estado final; `useMyOrders` hace lo mismo mientras haya pedidos sin terminar. Nuevo `OrdersPort.getOrder(id)` implementado en el repositorio con `GET /api/v1/orders/{id}`; queryKey `orders.byId`.
+- **Página `/orders/:id` (`OrderDetailPage`)**: badge + indicador pulsante «actualización en vivo» + componente `OrderTracking` (timeline con las 4 etapas resaltando la actual, o aviso rojo si está `Cancelled`) + total, fechas y artículos; enlace «← Mis pedidos». En «Mis pedidos», cada pedido enlaza a su detalle y el subtítulo explica el seguimiento en vivo.
+- **Tests del frontend (tooling nuevo en el SPA)**: Vitest 5 + React Testing Library 16 + jsdom + jest-dom; script `npm test` (`vitest run`); configuración en `vite.config.ts` (`test.environment: 'jsdom'`, `setupFiles: src/test/setup.ts` con cleanup explícito tras cada test). **4 ficheros / 12 tests**: `orderStatus.test.ts` (labels, steps, estado final), `CartStorageImpl.test.ts` (roundtrip localStorage), `CartContext.test.tsx` (añadir/acumular/quitar/vaciar + persistencia) y `Pagination.test.tsx` (render + navegación + disabled).
+
+**Qué no se añadió y por qué**:
+
+- **El backend no se tocó**: el polling aprovecha el `GET /api/v1/orders/{id}` existente (el DTO ya exponía `status`/`updatedAt`); no se añadieron streaming (SSE/WebSockets), endpoint de eventos ni cambios de contrato HTTP/mensajes (el contrato de órdenes es estable).
+- **`Delivered` no lo emite la saga** (termina en `Shipped`), pero se mantiene en el timeline y en el enum de Orders (`Shipped → Delivered` es transición válida); el SPA lo refleja como etapa del contrato, no como estado alcanzable hoy.
+- **Los tests del frontend viven fuera del monorepo** (junto al SPA): el CI del repo (`ci.yml`) sigue cubriendo solo los **94 tests** de backend; el recuento de **12 tests** corresponde al SPA.
+- **Sin *code-splitting* por rutas ni hosting del SPA** (arrastrado de la Fase 16): bundle único y despliegue desacoplado del stack Docker de producción.
+
+**Verificación**: `npm test` **12/12 verdes**, `tsc --noEmit` limpio y `npm run build` OK en el SPA; E2E real vía gateway: pedido creado en `Pending` y observado pasar a `Shipped` por polling de `GET /api/v1/orders/{id}`; el SPA sirve `/` y `/orders/:id` en dev. Suite de backend del repo intacta (94 tests).

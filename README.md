@@ -41,7 +41,7 @@
 - **Observabilidad**: OpenTelemetry → Jaeger (trazas), Prometheus + Grafana (métricas `/metrics`).
 - **Docker de producción**: multi-stage, compose con Postgres/RabbitMQ propios y solo `:80` expuesto.
 - **CI/CD**: GitHub Actions (build+test en cada push) y deploy por tags `v*`.
-- **94 tests** (unit + integración con Testcontainers).
+- **94 tests** de backend (unit + integración con Testcontainers); el **SPA** suma **12 tests propios** (Vitest + React Testing Library, fuera del monorepo).
 
 ## Arquitectura
 
@@ -86,6 +86,7 @@ La interfaz web (React) **vive fuera del monorepo** (carpeta local del autor `~/
 - **Login**: `customer/customer123` (rol `customer`) o `admin/admin123` (rol `admin`), con el flujo OIDC de Authorization Code + PKCE (cliente `web-spa`) contra `http://localhost:5080`.
 - **Configuración**: se define por entorno con `VITE_GATEWAY_URL` y `VITE_OIDC_CLIENT_ID` (`.env`/`.env.production`; plantilla en `.env.example`) — **configuración, no secretos**; la seguridad del flujo reside en Authorization Code + PKCE (cliente público `web-spa`).
 - **Carrito y paginación**: el carrito persiste en `localStorage` (clave `bookstore.cart`) y el checkout crea el pedido con `Idempotency-Key`; la home busca con debounce y los listados de libros/pedidos pagan con el componente `Pagination`.
+- **Seguimiento en vivo**: «Mis pedidos» enlaza al detalle (`/orders/:id`), con timeline (`OrderTracking`: `Pending → Paid → Shipped → Delivered`) e indicador pulsante de «actualización en vivo»; `useOrder`/`useMyOrders` hacen *polling* de `GET /api/v1/orders/{id}` cada 2 s mientras el pedido no esté en estado final, y el badge usa los **estados reales de Orders** (`Pending/Paid/Shipped/Delivered/Cancelled` — la saga termina en `Shipped`, nunca emite `Delivered`). Tests del SPA: `npm test` (**12 tests**, Vitest + React Testing Library).
 - **API**: todas las llamadas pasan por el gateway `http://localhost:5080` (`/api/v1/*` y endpoints OIDC `/connect/*`, `/.well-known/*`).
 
 ## Requisitos previos
