@@ -32,7 +32,8 @@
 ## Features
 
 - **Un solo punto de entrada**: gateway YARP que enruta `/api/v1/*` y los endpoints OIDC (`/connect/*`, `/.well-known/*`) a los servicios internos (y reescribe destinos en prod).
-- **Autenticación OpenID Connect** centralizada (`Auth.API` actúa de **proveedor OIDC** con OpenIddict — Authorization Code + PKCE para SPA, *password*/*refresh* para clientes confidenciales; los demás servicios validan los tokens por *discovery*).
+- **Autenticación OpenID Connect** centralizada (`Auth.API` actúa de **proveedor OIDC** con OpenIddict — Authorization Code + PKCE para SPA, *password*/*refresh* para clientes confidenciales; **el gateway y los servicios** validan los tokens por *discovery*, y las rutas `orders`/`stock-items` exigen token **en el borde** — 401 sin él — mientras `catalog` y `auth` siguen públicas).
+- **Rate limiting en el gateway**: fixed window **20 req/15 s por IP** (`QueueLimit 0`); al superarlo responde **429** con `Retry-After: 15`.
 - **Saga distribuida** con `MassTransit` + patrón **Outbox/Inbox** transaccional (sin pérdida ni duplicado de mensajes).
 - **Resiliencia**: reintentos exponenciales y circuit breaker (`Microsoft.Extensions.Http.Resilience`/Polly).
 - **Idempotencia**: header `Idempotency-Key` en `POST /orders` (retry seguro sin duplicar pedidos).
@@ -40,7 +41,7 @@
 - **Observabilidad**: OpenTelemetry → Jaeger (trazas), Prometheus + Grafana (métricas `/metrics`).
 - **Docker de producción**: multi-stage, compose con Postgres/RabbitMQ propios y solo `:80` expuesto.
 - **CI/CD**: GitHub Actions (build+test en cada push) y deploy por tags `v*`.
-- **92 tests** (unit + integración con Testcontainers).
+- **94 tests** (unit + integración con Testcontainers).
 
 ## Arquitectura
 
@@ -147,7 +148,7 @@ La interfaz web (React) **vive fuera del monorepo** (carpeta local del autor `~/
 | `ConnectionStrings__OrderSagaDb` | `Host=localhost;Database=order_saga_db;...` | BD de la saga |
 | `RabbitMQ__Host` | `rabbitmq://localhost` | Broker de mensajería (en prod `rabbitmq://rabbitmq`) |
 | `CatalogApi__BaseAddress` | `http://localhost:5038` | HTTP a Catalog usado por Orders |
-| `OpenIddict__Issuer` | `http://localhost:5080` | Issuer público del proveedor OIDC; los servicios lo usan para descubrir claves y validar el `iss` (en dev es el Host del gateway; en prod default `http://auth:5100` resoluble en la red interna; para dominios reales sobreescribe con `BOOKSTORE_PUBLIC_ISSUER`) |
+| `OpenIddict__Issuer` | `http://localhost:5080` | Issuer público del proveedor OIDC; **los servicios y el gateway** lo usan para descubrir claves y validar el `iss` (en dev es el Host del gateway; en prod default `http://auth:5100` resoluble en la red interna; para dominios reales sobreescribe con `BOOKSTORE_PUBLIC_ISSUER`) |
 | `OpenIddict__SpaClientId`/`SpaRedirectUri` | `web-spa` / `http://localhost:5173/callback` | Cliente público SPA (Authorization Code + PKCE) sembrado al arrancar |
 | `OpenIddict__CliClientId`/`CliClientSecret` | `cli` / `cli-dev-secret` | Cliente confidencial para la CLI (*password*/*refresh* grant) |
 | `OpenTelemetry__Endpoint` | `http://localhost:4317` | Endpoint OTLP (Jaeger) |
@@ -166,6 +167,8 @@ La documentación completa de cada contrato está en el **Swagger** de cada serv
 | GET/POST | `/api/v1/books`, `/api/v1/categories` | Catalog |
 | GET/POST/PATCH | `/api/v1/orders/...` | Orders |
 | GET/POST | `/api/v1/stock-items/...` | Inventory |
+
+Las rutas `orders` y `stock-items` exigen **token Bearer** (el gateway valida en el borde y responde **401** sin token); `books`, `categories`, `/connect/*` y `/.well-known/*` son públicas. El gateway aplica además **rate limiting** de 20 peticiones/15 s por IP (429 con `Retry-After: 15`).
 
 **Credenciales demo**: `admin/admin123` (rol `admin`) y `customer/customer123` (rol `customer`).
 

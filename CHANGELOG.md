@@ -19,7 +19,7 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y el p
 - **Observabilidad**: OpenTelemetry → Jaeger (OTLP), Prometheus + Grafana provisionado, y `docker-compose.observability.yml`.
 - **Docker de producción** multi-stage (`docker/docker-compose.prod.yml`, 9 contenedores, gateway en `:80`).
 - **CI/CD** en GitHub Actions: `ci.yml` (build + test en cada push) y `cd.yml` (deploy por tags `v*`).
-- Suite de **92 tests** (unit + integración con Testcontainers).
+- Suite de **94 tests** (unit + integración con Testcontainers; ver `tests/ApiGateway.UnitTests`).
 - **Frontend SPA** (fuera del monorepo, `~/Desktop/BookStoreWeb`): React 19 + Vite 8 + TypeScript 6, react-router 7, TanStack Query 5, axios, zod 4 y oidc-client-ts 3; consume el backend por el gateway (`:5080`) con Authorization Code + PKCE (cliente `web-spa`), login HTML en `/connect/authorize`, callback en `/callback`, renovación silenciosa (`automaticSilentRenew`) y logout con `signoutRedirect`.
 - **Auth.API**: endpoint de logout `GET/POST /connect/logout` (`AuthorizationController.Logout()`): cierra la sesión de OpenIddict (`SignOutAsync`) y redirige a `post_logout_redirect_uri` (registrado `http://localhost:5173/` para el SPA) o `/`.
 - **ApiGateway**: política CORS `Frontend` con `AllowedOrigins=["http://localhost:5173"]` y transform `RequestHeaderOriginalHost: true` en las rutas OIDC (`/connect/{**catch-all}`, `/.well-known/{**catch-all}`) para preservar el Host público `:5080` hacia Auth.
@@ -28,6 +28,8 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y el p
 - **Búsqueda en el catálogo del SPA** con debounce (`useDeferredValue`) y reseteo de página al cambiar el término; el `queryKey` de TanStack Query combina `search + page`.
 - **Paginación de la UI del SPA**: componente reutilizable `Pagination` (Anterior · Página X de Y · Siguiente) en libros y pedidos, con `keepPreviousData` y `page` en el `queryKey`.
 - **Convención de código del SPA**: código directo sin escritura defensiva ni helpers de más (`parse`/`normalize`/`safe`/`fallback`/`resolve` prohibidos como nombres propios; el `.parse()` de zod es API de librería).
+- **ApiGateway: validación OIDC en el borde** (`feat(gateway)`): `AddIdpAuthentication` (OpenIddict.Validation de SharedKernel) + política `authenticated` (`RequireAuthenticatedUser`) en las rutas `orders` (`/api/v1/orders/{**catch-all}`) e `inventory` (`/api/v1/stock-items/{**catch-all}`) → **401** sin token; `catalog-books`, `catalog-categories`, `auth-connect` y `auth-wellknown` siguen públicas (semántica de cada servicio). Issuer dev del gateway `OpenIddict__Issuer: http://localhost:5080` (proxya su propio `/.well-known` a Auth; *bootstrap* sin bucle) y orden de middleware `UseServiceTelemetry → UseRateLimiter → UseCors → UseAuthentication → UseAuthorization → MapReverseProxy`.
+- **ApiGateway: rate limiter extraído a `RateLimitPolicies.CreateGlobalLimiter()`** (fixed window **20 req/15 s por IP**, `QueueLimit 0`, **429** con `Retry-After: 15`) y cubierto por el nuevo **`tests/ApiGateway.UnitTests`** (2 tests: límite superado y partición por IP); la suite pasa de **92 a 94 tests**.
 
 ### Changed
 
@@ -36,6 +38,7 @@ El formato sigue [Keep a Changelog](https://keepachangelog.com/es/1.1.0/) y el p
 - El token se obtiene ahora por OIDC a través del gateway (`POST /connect/token`, password grant) en lugar de `POST /api/v1/auth/token`.
 - El issuer público del proveedor es configurable (`OpenIddict__Issuer`; en prod default interno `http://auth:5100`; `BOOKSTORE_PUBLIC_ISSUER` lo sobreescribe para dominios reales).
 - Auth.API pasa a usar su propia base `auth_db` (aplicaciones/scopes/autorizaciones OpenIddict); el compose de prod la conecta y añade `depends_on: postgres`.
+- El compose de prod inyecta ahora al servicio `apigateway` `OpenIddict__Issuer` (default interno `http://auth:5100`, sobreescribible con `BOOKSTORE_PUBLIC_ISSUER`) y `OpenIddict__DisableTransportSecurityRequirement: "true"`, igual que el resto de servicios con validación, para que el gateway valide tokens en el borde dentro de la red.
 
 ### Fixed
 

@@ -52,7 +52,7 @@ flowchart TB
 
 | Componente | Rol | Puerta de entrada |
 |---|---|---|
-| **ApiGateway** | Punto único de entrada (YARP), enrutado y reescritura de destinos | `:5080` dev / `:80` prod (único puerto público) |
+| **ApiGateway** | Punto único de entrada (YARP), enrutado, **validación OIDC en el borde y rate limiting global** | `:5080` dev / `:80` prod (único puerto público) |
 | **Auth.API** | **Proveedor OpenID Connect** (OpenIddict): login, emisión de tokens y *discovery* | `/connect/*` · `/.well-known/*` |
 | **Catalog.API** | Catálogo de libros y categorías | `/api/v1/books/*`, `/api/v1/categories/*` |
 | **Orders.API** | Creación y estados de pedidos, productor/consumidor de mensajes | `/api/v1/orders/*` |
@@ -65,18 +65,20 @@ flowchart TB
 
 Rutas definidas en `src/ApiGateway/appsettings.json`:
 
-| Ruta | Cluster (servicio) | Destino |
-|---|---|---|
-| `/api/v1/books/{**catch-all}` | `catalog` → `catalog-1` | `http://catalog:5038/` *(prod)* |
-| `/api/v1/categories/{**catch-all}` | `catalog` | ídem |
-| `/api/v1/orders/{**catch-all}` | `orders` → `orders-1` | `http://orders:5248/` |
-| `/api/v1/stock-items/{**catch-all}` | `inventory` → `inventory-1` | `http://inventory:5208/` |
-| `/connect/{**catch-all}` | `auth` → `auth-1` | `http://auth:5100/` |
-| `/.well-known/{**catch-all}` | `auth` | ídem |
+| Ruta | Cluster (servicio) | Destino | Autorización |
+|---|---|---|---|
+| `/api/v1/books/{**catch-all}` | `catalog` → `catalog-1` | `http://catalog:5038/` *(prod)* | pública |
+| `/api/v1/categories/{**catch-all}` | `catalog` | ídem | pública |
+| `/api/v1/orders/{**catch-all}` | `orders` → `orders-1` | `http://orders:5248/` | `authenticated` |
+| `/api/v1/stock-items/{**catch-all}` | `inventory` → `inventory-1` | `http://inventory:5208/` | `authenticated` |
+| `/connect/{**catch-all}` | `auth` → `auth-1` | `http://auth:5100/` | pública (IdP) |
+| `/.well-known/{**catch-all}` | `auth` | ídem | pública (IdP) |
 
 Los endpoints **OIDC** (`/connect/*`, `/.well-known/*`) se exponen por el gateway para que clientes y validadores resuelvan *discovery* y emisión de tokens. El issuer (`OpenIddict__Issuer`) por defecto en prod es la dirección interna `http://auth:5100` (resoluble en la red Docker); para exposiciones tras un dominio real, define `BOOKSTORE_PUBLIC_ISSUER=https://tudominio.com` (todos los servicios y auth apuntarán al mismo issuer). En dev el issuer es `http://localhost:5080` (el Host público del gateway).
 
 Las rutas OIDC (`/connect/{**catch-all}`, `/.well-known/{**catch-all}`) llevan el transform **`RequestHeaderOriginalHost: true`**: YARP reenvía a Auth conservando el Host original de la petición (en dev `localhost:5080`), de modo que los endpoints **relativos** de OIDC y el documento de *discovery* se resuelven contra el Host público del gateway y no contra el destino interno. El gateway define además la política CORS **`Frontend`** (`AllowedOrigins=["http://localhost:5173"]`, `AllowAnyHeader`/`AllowAnyMethod`) para que el SPA React pueda consumirlo desde su origen de desarrollo.
+
+Las rutas **`orders`** e **`inventory`** llevan `AuthorizationPolicy: authenticated` (`RequireAuthenticatedUser`): el gateway valida el token **en el borde** (mismo `AddIdpAuthentication` de SharedKernel, `OpenIddict.Validation`) y responde **401** antes de reenviar al servicio destino; `catalog-*`, `auth-connect` y `auth-wellknown` no llevan política (públicas por la semántica de cada servicio: lectura de catálogo y endpoints del IdP). En dev el gateway declara `OpenIddict__Issuer: http://localhost:5080` y proxya su propio `/.well-known` hacia Auth (*bootstrap* sin bucle: el edge valida `iss` contra su propio Host público).
 
 En el stack de producción las direcciones se inyectan por entorno (`ReverseProxy__Clusters__*__Destinations__*__Address`), porque dentro del *overlay network* de Docker los contenedores se resuelven por **nombre de servicio**, no por `localhost`.
 
@@ -191,10 +193,12 @@ Garantiza que reintentos de red por timeout no dupliquen pedidos ni reservas.
   - `cli` (confidencial, `CliClientSecret`): **password grant** + refresh para la CLI/scripts.
   - Tokens RS256 (firmados con certificado de desarrollo; HTTPS + certificado real pendiente en prod), vida 30 min, refresh 14 días.
   - **Cierre de sesión**: `GET/POST /connect/logout` (`AuthorizationController.Logout()`) ejecuta `SignOutAsync` sobre el esquema de OpenIddict y redirige a `post_logout_redirect_uri` (o `/`).
-- **Validación por *discovery***: Catalog/Orders/Inventory usan `OpenIddict.Validation` → descargan el documento de discovery del issuer y validan `iss`/firma/claves (sin firma compartida hardcodeada).
+- **Validación por *discovery***: Catalog/Orders/Inventory y el **ApiGateway** usan `OpenIddict.Validation` → descargan el documento de discovery del issuer y validan `iss`/firma/claves (sin firma compartida hardcodeada).
+- **Auth en el borde (gateway)**: el ApiGateway exige token con la política `authenticated` en las rutas `orders` e `inventory` (**401** temprano sin token, sin reemplazar la validación por discovery del servicio destino); `catalog` y `auth` se mantienen públicas. Issuer dev del gateway `http://localhost:5080` (su `/.well-known` proxya a Auth, *bootstrap* sin bucle).
+- **Rate limiting global en el gateway**: fixed window **20 req/15 s por IP** (`QueueLimit 0` → sin cola), **429** con `Retry-After: 15`; implementación extraída a `RateLimitPolicies.CreateGlobalLimiter()` y cubierta por `tests/ApiGateway.UnitTests` (2 tests: rechazo al superar el límite y partición por IP).
 - **Roles**: `admin`/`customer` viajan en el claim `role` y las políticas de autorización usan `RequireClaim("role", ...)` (`AdminOnly` para inventario y otras operaciones protegidas).
 - **Secrets**: claves y contraseñas de producción nunca en `appsettings.json` (ver SECURITY/CONTRIBUTING); catálogo no requiere token para lectura.
-- El reverse-proxy expone `/api/v1/*`, `/connect/*` y `/.well-known/*`; el resto no es accesible desde el exterior. El **SPA React** (fuera del monorepo) consume la *discovery* y estos endpoints contra el Host público del gateway (`:5080`).
+- El reverse-proxy expone `/api/v1/*`, `/connect/*` y `/.well-known/*` (con `orders` y `stock-items` protegidos por la política `authenticated` en el borde); el resto no es accesible desde el exterior. El **SPA React** (fuera del monorepo) consume la *discovery* y estos endpoints contra el Host público del gateway (`:5080`).
 
 ## 13. Persistencia
 
@@ -222,7 +226,7 @@ Garantiza que reintentos de red por timeout no dupliquen pedidos ni reservas.
 Dos modos de ejecución equivalentes (no duplicados):
 
 - **Dev** (iteración): 6 procesos `dotnet run` en puertos dedicados + contenedores de infraestructura (`bookstore-postgres`, `bookstore-rabbitmq`, y opcional observabilidad por `docker-compose.observability.yml`).
-- **Prod** (`docker/docker-compose.prod.yml`): 9 contenedores con Postgres/RabbitMQ propios en red interna; **único puerto público `:80`** (gateway). Los destinos YARP se inyectan por variables de entorno; el issuer OIDC (`OpenIddict__Issuer`) por defecto es la dirección interna `http://auth:5100`, resoluble por los servicios dentro de la red Docker; `BOOKSTORE_PUBLIC_ISSUER` lo sobreescribe para exposiciones tras dominio real.
+- **Prod** (`docker/docker-compose.prod.yml`): 9 contenedores con Postgres/RabbitMQ propios en red interna; **único puerto público `:80`** (gateway). Los destinos YARP se inyectan por variables de entorno; el issuer OIDC (`OpenIddict__Issuer`) por defecto es la dirección interna `http://auth:5100`, resoluble por los servicios dentro de la red Docker; `BOOKSTORE_PUBLIC_ISSUER` lo sobreescribe para exposiciones tras dominio real. El servicio `apigateway` recibe en el compose ese mismo `OpenIddict__Issuer` y `OpenIddict__DisableTransportSecurityRequirement: "true"` (igual que los servicios con validación) para poder validar tokens en el borde dentro de la red.
 
 **CI/CD** (`../../.github/workflows/`):
 - `ci.yml`: en cada push/PR a `main` → `dotnet restore` + `build` + `test` (unit + integración con Testcontainers).

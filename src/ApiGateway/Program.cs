@@ -1,5 +1,7 @@
-using System.Threading.RateLimiting;
+using ApiGateway;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.RateLimiting;
+using SharedKernel.Security;
 using SharedKernel.Telemetry;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -10,19 +12,7 @@ builder.Services.AddReverseProxy()
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-    
-    options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
-    {
-        var clientIp = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
-
-        return RateLimitPartition.GetFixedWindowLimiter(clientIp, _ =>
-            new FixedWindowRateLimiterOptions()
-            {
-                PermitLimit = 20,
-                Window = TimeSpan.FromSeconds(15),
-                QueueLimit = 0
-            });
-    });
+    options.GlobalLimiter = RateLimitPolicies.CreateGlobalLimiter();
 
     options.OnRejected = async (context, cancellationToken) =>
     {
@@ -33,6 +23,10 @@ builder.Services.AddRateLimiter(options =>
         }, cancellationToken);
     };
 });
+
+builder.Services.AddIdpAuthentication(builder.Configuration);
+builder.Services.AddAuthorizationBuilder()
+    .AddPolicy("authenticated", policy => policy.RequireAuthenticatedUser());
 
 builder.Services.AddHealthChecks();
 
@@ -57,6 +51,8 @@ var app = builder.Build();
 app.UseServiceTelemetry();
 app.UseRateLimiter();
 app.UseCors("Frontend");
+app.UseAuthentication();
+app.UseAuthorization();
 app.MapReverseProxy();
 app.MapHealthChecks("/health");
 

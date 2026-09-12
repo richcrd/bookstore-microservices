@@ -25,8 +25,9 @@
 | 14. Seguridad OIDC | Proveedor OpenID Connect + validación por discovery | Login OIDC + 401/403 + suite verde | ✔ |
 | 15. Frontend SPA | Frontend SPA (React + OIDC) | Login + pedido end-to-end vía gateway; build/tsc OK | ✔ |
 | 16. Frontend SPA v2 | SPA v2: búsqueda, carrito y paginación | tsc + build OK; flujo añadir → carrito → pedido validado | ✔ |
+| 17. Gateway: auth en el borde | OIDC en el edge + rate limiting testeado (deuda Fase 6) | 401 en orders/stock-items sin token; ráfaga 30 → 20 OK + 429; 94 tests | ✔ |
 
-**Estado final**: 92 tests en verde · CI/CD operativo · stack prod validado · frontend SPA v2 (React + OIDC) validado end-to-end contra el gateway (búsqueda, carrito persistente y paginación).
+**Estado final**: 94 tests en verde · CI/CD operativo · stack prod validado · gateway con auth OIDC en el borde y rate limiting testeado · frontend SPA v2 (React + OIDC) validado end-to-end contra el gateway (búsqueda, carrito persistente y paginación).
 
 ---
 
@@ -128,7 +129,7 @@ OrderCreated → AwaitingPayment → (PaymentApproved) → ShipmentRequested →
 **Qué se añadió**: proyecto `ApiGateway` con **YARP**: 5 rutas `/api/v1/*` (`books`, `categories`, `orders`, `stock-items`, `auth`) hacia los clusters de servicios, dando un **punto único de entrada** con URL estable.
 
 **Qué no se añadió y por qué**:
-- **No se hizo rate limiting ni autenticación en el gateway**: la validación de tokens se mantiene en cada servicio (firma JWT compartida) y el límite de tráfico se dejó como deuda de producción.
+- **No se hizo rate limiting ni autenticación en el gateway**: la validación de tokens se mantiene en cada servicio (firma JWT compartida) y el límite de tráfico se dejó como deuda de producción — **cerrada en la Fase 17** (auth OIDC en el borde + rate limiting extraído y testeado).
 - **No se configuró CORS**: pendiente intencionalmente hasta definir el cliente web (frontend).
 
 **Verificación**: enrutado `:5080` (dev) y `:80` (prod) hacia los 4 servicios; `/health` operativo.
@@ -279,3 +280,21 @@ OrderCreated → AwaitingPayment → (PaymentApproved) → ShipmentRequested →
 - **Code-splitting por rutas** (lazy loading de páginas): todas las rutas se mantienen en un solo bundle por simplicidad; con una aplicación aún pequeña la división de código aportaría poco hoy. Pendiente como optimización futura.
 
 **Verificación**: `tsc` limpio y `vite build` OK; flujo completado a mano: búsqueda con debounce → añadir al carrito → recarga (el carrito persiste en `localStorage`) → ajuste de cantidades +/− → crear pedido con `Idempotency-Key` → carrito vaciado y pedido visible en «Mis pedidos» con paginación.
+
+---
+
+## Fase 17 — Gateway: auth OIDC en el borde + rate limiting testeado
+
+**Qué se añadió** (cierra la deuda de la **Fase 6**):
+- **Validación de tokens en el borde (edge)**: el ApiGateway valida ahora en la entrada con `AddIdpAuthentication(builder.Configuration)` de SharedKernel (`OpenIddict.Validation`) y una política `authenticated` (`RequireAuthenticatedUser`). Las rutas YARP `orders` (`/api/v1/orders/{**catch-all}`) e `inventory` (`/api/v1/stock-items/{**catch-all}`) exigen token; `catalog-books`, `catalog-categories`, `auth-connect` y `auth-wellknown` siguen públicas (preservando la semántica de cada servicio: Catalog lee con `[AllowAnonymous]`, Auth es el IdP).
+- **Orden de middleware** en `Program.cs`: `UseServiceTelemetry → UseRateLimiter → UseCors → UseAuthentication → UseAuthorization → MapReverseProxy`.
+- **Issuer del gateway**: `OpenIddict__Issuer: http://localhost:5080` en `appsettings.json` (dev) — el gateway proxya su propio `/.well-known` al auth, *bootstrap* sin bucle.
+- **Rate limiting extraído y testeable**: el limiter global (fixed window **20 req/15 s por IP**, `QueueLimit 0`, **429** con `Retry-After: 15`) que ya existía en el gateway se movió a `src/ApiGateway/RateLimitPolicies.cs` (`CreateGlobalLimiter()`) sin cambiar su comportamiento.
+- **Tests**: nuevo proyecto `tests/ApiGateway.UnitTests` (2 tests: rechazo al superar el límite y partición por IP). Suite total: 92 → **94 tests** en verde; build sin errores nuevos.
+- **Compose prod**: el servicio `apigateway` recibe `OpenIddict__Issuer: ${BOOKSTORE_PUBLIC_ISSUER:-http://auth:5100}` y `OpenIddict__DisableTransportSecurityRequirement: "true"` (igual que los demás servicios con validación).
+
+**Qué no se añadió y por qué**:
+- **No se sustituyó la validación por discovery de los servicios**: el edge añade una primera barrera (401 temprano y política central única) pero Orders/Inventory/la saga siguen validando en origen; no se centralizó toda la autorización ni las políticas por rol en el gateway.
+- **El rate limiter sigue siendo global y fijo por IP**: no hay políticas por ruta ni por usuario, ni cola (`QueueLimit 0` → rechazo directo); es un límite de abuso básico, no un plan de QoS por cliente (mejora futura).
+
+**Verificación**: E2E manual en dev (gateway `:5080`): `GET /api/v1/orders` sin token → **401**; con token (cliente `cli`, *password grant*) → **200**; `/.well-known/openid-configuration` y `/api/v1/books` → **200** públicos; ráfaga de 30 GET → 20 OK y luego **429** con `Retry-After: 15`; suite **94/94** en verde.

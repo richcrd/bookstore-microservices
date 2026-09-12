@@ -106,6 +106,8 @@ services:
       - "80:5080"
     environment:
       OpenTelemetry__Endpoint: http://host.docker.internal:4317
+      OpenIddict__Issuer: ${BOOKSTORE_PUBLIC_ISSUER:-http://auth:5100}
+      OpenIddict__DisableTransportSecurityRequirement: "true"
       ReverseProxy__Clusters__catalog__Destinations__catalog-1__Address: http://catalog:5038/
       ReverseProxy__Clusters__orders__Destinations__orders-1__Address: http://orders:5248/
       ReverseProxy__Clusters__inventory__Destinations__inventory-1__Address: http://inventory:5208/
